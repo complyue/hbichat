@@ -4,8 +4,8 @@ import hbi
 
 from hbi import interop
 
-from ..pkg import *
-from ..pkg import ds
+from ...pkg import *
+from ...pkg import ds
 
 logger = get_logger(__package__)
 

@@ -3,10 +3,27 @@
   "configurations": [
     {
       "name": "Chat Server",
-      "type": "go",
+      "type": "python",
       "request": "launch",
-      "mode": "debug",
-      "program": "${workspaceFolder}/cmd/server"
+      "env": {
+        "HBICHAT_LOG_LEVEL": "DEBUG"
+      },
+      "cwd": "${workspaceFolder}",
+      "module": "hbichat.cmd.server",
+      "args": [],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Chat Client",
+      "type": "python",
+      "request": "launch",
+      "env": {
+        "HBICHAT_LOG_LEVEL": "DEBUG"
+      },
+      "cwd": "${workspaceFolder}",
+      "module": "hbichat.cmd.client",
+      "args": [],
+      "console": "integratedTerminal"
     },
     {
       "name": "Pretty Exports",

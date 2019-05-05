@@ -1,5 +1,5 @@
 from .ds import *
-from .liner import *
+from .getline import *
 from .log import *
 from .service import *
 
@@ -8,8 +8,8 @@ __all__ = [
     # exports from .ds
     'MsgsInRoom', 'Msg',
 
-    # exports from .liner
-    'AsyncRPL',
+    # exports from .getline
+    'GetLine',
 
     # exports from .log
     'root_logger', 'get_logger',
