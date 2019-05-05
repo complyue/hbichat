@@ -111,6 +111,7 @@ There're {len(rooms)} rooms open, while you are in #{self.in_room.room_id!s} now
             await co.send_code(
                 f"""
 ShowNotice({",".join(repr(line) for line in welcome_lines)})
+InRoom({self.in_room.room_id!r})
 """
             )
 
