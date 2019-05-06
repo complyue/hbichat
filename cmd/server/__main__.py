@@ -4,8 +4,9 @@ import asyncio
 import hbi
 from hbi import interop
 
-from ...pkg import *
 from ...pkg import ds
+from ...pkg._service import *
+from ...pkg.log import *
 
 logger = get_logger(__package__)
 
@@ -87,7 +88,13 @@ async def serve_chatting():
             ":".join(str(v) for v in s.getsockname()) for s in server.sockets
         )
     )
-    await server.wait_closed()
+
+    try:
+        await server.wait_closed()
+    except KeyboardInterrupt:
+        logger.info("HBI Chatting Server shutting down.")
+        server.close()
+        await server.wait_closed()
 
 
 asyncio.run(serve_chatting())

@@ -19,6 +19,8 @@ class GetLine:
     def __init__(self, ps1):
         assert sys.stdin.isatty(), "should only use GetLine with terminal input!"
 
+        self.running = True
+
         self.ps1 = ps1
 
         self.loop = asyncio.get_running_loop()
@@ -33,9 +35,13 @@ class GetLine:
 
         """
 
-        while True:
+        while self.running:
+
             self.prompting = False
-            self.procede_reading.wait()
+            try:
+                self.procede_reading.wait()
+            except (KeyboardInterrupt, SystemExit):
+                break
 
             try:
                 self.prompting = True
@@ -62,6 +68,10 @@ class GetLine:
     async def get_line(self):
         self.procede_reading.set()
         return await self.srcq.get()
+
+    def stop(self):
+        self.running = False
+        self.srcq.put_nowait(None)
 
     def show(self, text: str):
         """

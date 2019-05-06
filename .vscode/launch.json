@@ -1,40 +1,42 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Chat Server",
-      "type": "python",
-      "request": "launch",
-      "env": {
-        "HBICHAT_LOG_LEVEL": "DEBUG"
-      },
-      "cwd": "${workspaceFolder}",
-      "module": "hbichat.cmd.server",
-      "args": [],
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Chat Client",
-      "type": "python",
-      "request": "launch",
-      "env": {
-        "HBICHAT_LOG_LEVEL": "DEBUG"
-      },
-      "cwd": "${workspaceFolder}",
-      "module": "hbichat.cmd.client",
-      "args": [],
-      "console": "integratedTerminal"
-    },
-    {
-      "name": "Pretty Exports",
-      "type": "python",
-      "request": "launch",
-      "env": {},
-      "cwd": "${workspaceFolder}",
-      "program": "${workspaceFolder}/../hbi/pretty-exports.py",
-      "args": [],
-      "console": "integratedTerminal"
-    }
-  ]
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Chat Server",
+            "type": "python",
+            "request": "launch",
+            "env": {
+                "HBI_LOG_LEVEL": "DEBUG",
+                "HBICHAT_LOG_LEVEL": "DEBUG"
+            },
+            "cwd": "${workspaceFolder}",
+            "module": "hbichat.cmd.server",
+            "args": [],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Chat Client",
+            "type": "python",
+            "request": "launch",
+            "env": {
+                "HBI_LOG_LEVEL": "DEBUG",
+                "HBICHAT_LOG_LEVEL": "DEBUG"
+            },
+            "cwd": "${workspaceFolder}",
+            "module": "hbichat.cmd.client",
+            "args": [],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Pretty Exports",
+            "type": "python",
+            "request": "launch",
+            "env": {},
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/../hbi/pretty-exports.py",
+            "args": [],
+            "console": "integratedTerminal"
+        }
+    ]
 }
 I
