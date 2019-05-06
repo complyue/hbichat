@@ -4,7 +4,7 @@ import sys
 import threading
 
 import hbi
-from hbi import interop
+from hbi.pkg import interop
 
 from ...pkg import *
 from ...pkg import ds

@@ -2,7 +2,7 @@ import argparse
 import asyncio
 
 import hbi
-from hbi import interop
+from hbi.pkg import interop
 
 from ...pkg import ds
 from ...pkg._service import *
