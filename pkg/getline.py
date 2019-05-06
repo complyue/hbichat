@@ -70,6 +70,8 @@ class GetLine:
         A new line is always added to the text.
 
         """
+        assert isinstance(text, str), "only str should be passed here!"
+
         if len(text) <= 0:
             return
 

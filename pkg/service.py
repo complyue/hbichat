@@ -18,6 +18,11 @@ logger = get_logger(__package__)
 
 
 class Room:
+    """
+    Service side room object
+
+    """
+
     def __init__(self, room_id: str, max_hist=10):
         self.room_id = room_id
         self.msgs = deque((), max_hist)
@@ -81,6 +86,10 @@ def prepare_room(room_id: str = None):
 
 
 class Chatter:
+    """
+    Server side chatter object
+    
+    """
 
     # name of methods to be exposed for peer scripting
     service_methods = ["__hbi_init__", "SetNick", "GotoRoom", "Say", "hbi_disconnected"]
