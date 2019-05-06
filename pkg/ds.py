@@ -33,7 +33,7 @@ class Msg:
             raise ValueError(f"Invalid time type: {type(time_)!s}")
 
     def __repr__(self):
-        return f"Msg(({self.from_!r}),({content!r}),({time_!r}))"
+        return f"Msg(({self.from_!r}),({self.content!r}),({self.time_!r}))"
 
     def __str__(self):
         return f"""[{datetime.fromtimestamp(self.time_).strftime('%F %T')!s}] {self.from_!s}: {self.content!s}"""

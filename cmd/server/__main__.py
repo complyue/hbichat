@@ -97,4 +97,7 @@ async def serve_chatting():
         await server.wait_closed()
 
 
-asyncio.run(serve_chatting())
+try:
+    asyncio.run(serve_chatting())
+except KeyboardInterrupt:
+    logger.info("HBI Chatting Server shut down.")

@@ -2,6 +2,7 @@ import asyncio
 import readline
 import sys
 import threading
+from typing import *
 
 from .log import get_logger
 
@@ -29,6 +30,12 @@ class GetLine:
         self.procede_reading = threading.Event()
         self.prompting = False
 
+    def feed_reader(self, src: Optional[str]):
+        if self.loop.is_closed():
+            logger.debug(f"Source line not fed to reader as loop closed: {src!r}")
+            return
+        self.loop.call_soon_threadsafe(self.srcq.put_nowait, src)
+
     def read_loop(self):
         """
         This should be called from main thread to correctly receive KeyboardInterrupt (i.e. Ctrl^C)
@@ -43,6 +50,7 @@ class GetLine:
             except (KeyboardInterrupt, SystemExit):
                 break
 
+            s = None
             try:
                 self.prompting = True
                 s = input(self.ps1)
@@ -51,7 +59,7 @@ class GetLine:
                 # put cursor to next line
                 print()
                 # send None to source queue
-                self.loop.call_soon_threadsafe(self.srcq.put_nowait, None)
+                self.feed_reader(None)
                 # stop the loop
                 break
             except KeyboardInterrupt:
@@ -60,7 +68,7 @@ class GetLine:
                 continue
 
             # send read source text to async queue
-            self.loop.call_soon_threadsafe(self.srcq.put_nowait, s)
+            self.feed_reader(s)
 
             # don't read input until next call on `.get_line()`
             self.procede_reading.clear()

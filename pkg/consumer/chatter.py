@@ -46,19 +46,17 @@ class Chatter:
         self.ho = ho
 
     def _update_prompt(self):
-        self.line_getter.ps1 = (
-            f"{self.nick!s}@{self.po.remote_addr()!s}#{self.in_room}: "
-        )
+        self.line_getter.ps1 = f"{self.nick!s}@{self.po.remote_addr!s}#{self.in_room}: "
 
     def NickAccepted(self, nick: str):
         self.nick = nick
         self._update_prompt()
 
-    async def InRoom(self, room_id: str):
+    def InRoom(self, room_id: str):
         self.in_room = room_id
         self._update_prompt()
 
-    async def RoomMsgs(self, room_msgs: MsgsInRoom):
+    def RoomMsgs(self, room_msgs: MsgsInRoom):
         if room_msgs.room_id != self.in_room:
             self.line_getter.show(f" *** Messages from #{room_msgs.room_id!s} ***")
         self.line_getter.show("\n".join(str(msg) for msg in room_msgs.msgs))
@@ -78,7 +76,7 @@ class Chatter:
 
             if sl[0] == "#":
                 # goto the specified room
-                room_id = sl[1:]
+                room_id = sl[1:].strip()
                 await self.po.notif(
                     rf"""
 GotoRoom({room_id!r})
@@ -86,7 +84,7 @@ GotoRoom({room_id!r})
                 )
             elif sl[0] == "$":
                 # change nick
-                nick = sl[1:]
+                nick = sl[1:].strip()
                 await self.po.notif(
                     rf"""
 SetNick({nick!r})
@@ -95,45 +93,38 @@ SetNick({nick!r})
             else:
                 msg = sl
                 try:
+                    # try find an empty slot to hold this pending message
                     msg_id = self.sent_msgs.index(None)
                     self.sent_msgs[msg_id] = msg
                 except ValueError:
+                    # extend a new slot for this pending message
                     msg_id = len(self.sent_msgs)
                     self.sent_msgs.append(msg)
-                await self.po.notif(
+                msg_buf = msg.encode("utf-8")
+                await self.po.notif_data(
                     rf"""
-Say({msg_id!r}, {msg!r})
-"""
+Say({msg_id!r}, {len(msg_buf)!r})
+""",
+                    msg_buf,
                 )
 
         print("Bye.")
 
-    async def Said(self, msg_id: int):
+    def Said(self, msg_id: int):
         msg = self.sent_msgs[msg_id]
         self.line_getter.show(
-            f"""
-@@ Your message [{msg_id!s}] displayed:
-  > {msg!s}
-"""
+            f"@@ Your message [{msg_id!s}] has been displayed:\n  > {msg!s}"
         )
         self.sent_msgs[msg_id] = None
 
-    async def ShowNotice(self, text: str):
+    def ShowNotice(self, text: str):
         self.line_getter.show(text)
 
-    async def ChatterJoined(self, nick: str, room_id: str):
-        self.line_getter.show(
-            f"""
-@@ {nick!s} joined #{room_id!s}
-"""
-        )
+    def ChatterJoined(self, nick: str, room_id: str):
+        self.line_getter.show(f"@@ {nick!s} has joined #{room_id!s}")
 
-    async def ChatterLeft(self, nick: str, room_id: str):
-        self.line_getter.show(
-            f"""
-@@ {nick!s} left #{room_id!s}
-"""
-        )
+    def ChatterLeft(self, nick: str, room_id: str):
+        self.line_getter.show(f"@@ {nick!s} has left #{room_id!s}")
 
     # show case the hbi callback on wire disconnected
     def hbi_disconnected(self, exc=None):

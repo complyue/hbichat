@@ -30,6 +30,8 @@ class Room:
         return self.cached_msg_log
 
     async def post_msg(self, from_chatter, content: str):
+        from .chatter import Chatter
+
         msg = Msg(
             from_chatter.nick
             if isinstance(from_chatter, Chatter)

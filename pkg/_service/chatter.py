@@ -39,29 +39,32 @@ class Chatter:
         self.ho = ho
 
         self.in_room = prepare_room()
-        self.nick = f"Stranger@{self.po.remote_addr!s}"
+        self.nick = f"Stranger?"
 
     async def __hbi_init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
         assert po is self.po and ho is self.ho
+
+        self.nick = f"Stranger${self.po.remote_addr!s}"
 
         async with po.co() as co:
             # send welcome notice to new comer
             welcome_lines = [
                 f"""
-Welcome {self.nick!s}, this is service at {ho.local_addr!s} !
-  ---
-There're {len(rooms)} rooms open, while you are in #{self.in_room.room_id!s} now.
+@@ Welcome {self.nick!s}, this is chat service at {ho.local_addr!s} !
+ -
+@@ There're {len(rooms)} rooms open, and you are in #{self.in_room.room_id!s} now.
 """
             ]
             for room_id, room in rooms.items():
                 welcome_lines.append(
                     f"""  -*-\t{len(room.chatters)!r} chatter(s) in room #{room.room_id!s}"""
                 )
+            notice_text = "\n".join(str(line) for line in welcome_lines)
             await co.send_code(
                 f"""
 NickAccepted({self.nick!r})
-ShowNotice({",".join(repr(line) for line in welcome_lines)})
 InRoom({self.in_room.room_id!r})
+ShowNotice({notice_text!r})
 """
             )
 
@@ -107,24 +110,27 @@ ChatterJoined({self.nick!r}, {new_room.room_id!r})
         new_room.chatters.add(self)
         welcome_lines = [
             f"""
-You are in #{new_room.room_id!s} now, {len(new_room.chatters)} chatter(s).
+@@ You are in #{new_room.room_id!s} now, {len(new_room.chatters)} chatter(s).
 """
         ]
-        room_msgs = MsgsInRoom(new_room.room_id, new_room.recent_msg_log)
-        async with self.po.co() as co:
-            await co.send_code(
-                f"""
-ShowNotice({",".join(repr(line) for line in welcome_lines)})
+        room_msgs = MsgsInRoom(new_room.room_id, new_room.recent_msg_log())
+        notice_text = "\n".join(str(line) for line in welcome_lines)
+        await self.ho.co.send_code(
+            f"""
 InRoom({new_room.room_id!r})
+ShowNotice({notice_text!r})
 RoomMsgs({room_msgs!r})
 """
-            )
+        )
 
     # show case a service method with binary payload, that to be received from
     # current hosting conversation
-    async def Say(self, msg_id, msg_len):
+    async def Say(self, msg_id, msg_len: int):
 
         # decode the input data
+        assert isinstance(
+            msg_len, int
+        ), f"msg_len {msg_len!r} of type {type(msg_len)!r} instead of int ?!"
         msg_buf = bytearray(msg_len)
         await self.ho.co.recv_data(msg_buf)
         msg = msg_buf.decode("utf-8")
