@@ -104,7 +104,7 @@ elif "__main__" == __name__:
     if not service_addr["host"]:
         service_addr["host"] = "127.0.0.1"
 
-    tui_liner = SyncVar()
+    tui_liner = hbi.SyncVar()
 
     async def do_chatting():
         try:

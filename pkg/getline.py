@@ -6,31 +6,9 @@ from typing import *
 
 from .log import get_logger
 
-__all__ = ["SyncVar", "GetLine"]
+__all__ = ["GetLine"]
 
 logger = get_logger(__name__)
-
-
-class SyncVar:
-    """
-    Synchronous variable to be set by asynchronous coroutines
-
-    """
-
-    def __init__(self):
-        self.ready = threading.Event()
-        self.val = None
-
-    def set(self, val):
-        self.val = val
-        self.ready.set()
-
-    def get(self):
-        self.ready.wait()
-        return self.val
-
-    def is_set(self):
-        return self.ready.is_set()
 
 
 class GetLine:

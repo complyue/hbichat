@@ -12,7 +12,7 @@ __all__ = [
     'MsgsInRoom', 'Msg',
 
     # exports from .getline
-    'SyncVar', 'GetLine',
+    'GetLine',
 
     # exports from .log
     'root_logger', 'get_logger',
