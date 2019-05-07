@@ -20,7 +20,6 @@ class Chatter:
 
     # name of methods to be exposed for peer scripting
     consumer_methods = [
-        "__hbi_init__",
         "ShowNotice",
         "NickAccepted",
         "InRoom",
@@ -28,22 +27,16 @@ class Chatter:
         "Said",
         "ChatterJoined",
         "ChatterLeft",
-        "hbi_disconnected",
     ]
 
-    def __init__(self, line_getter: GetLine):
+    def __init__(self, line_getter: GetLine, po: hbi.PostingEnd, ho: hbi.HostingEnd):
         self.line_getter = line_getter
+        self.po = po
+        self.ho = ho
 
         self.nick = "?"
         self.in_room = "?"
         self.sent_msgs = []
-
-        self.po = None
-        self.ho = None
-
-    async def __hbi_init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
-        self.po = po
-        self.ho = ho
 
     def _update_prompt(self):
         self.line_getter.ps1 = f"{self.nick!s}@{self.po.remote_addr!s}#{self.in_room}: "
@@ -125,9 +118,3 @@ Say({msg_id!r}, {len(msg_buf)!r})
 
     def ChatterLeft(self, nick: str, room_id: str):
         self.line_getter.show(f"@@ {nick!s} has left #{room_id!s}")
-
-    # show case the hbi callback on wire disconnected
-    def hbi_disconnected(self, exc=None):
-        if exc is not None:
-            logger.error(f"Connection to chatting service lost: {exc!s}")
-        self.line_getter.stop()

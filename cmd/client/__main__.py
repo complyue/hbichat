@@ -1,115 +1,156 @@
-import argparse
-import asyncio
-import sys
-import threading
+if "__chat_client__" == __name__:
+    # Initializing HBI context reacting to chat service.
 
-import hbi
+    # expose standard named values for interop
+    from hbi.interop import *
 
-from ...pkg import *
-from ...pkg import ds
+    # expose all shared type of data structures
+    from ...pkg.ds import *
 
-logger = get_logger(__package__)
+    async def __hbi_init__(po, ho):
+        from ...pkg import GetLine, Chatter
 
-if not sys.stdout.isatty():
-    logger.fatal("Can only run with a terminal!")
-    sys.exit(1)
+        # sync variables to be set, they are read by main thread
+        global tui_liner
 
-# take arguments from command line
-cmdl_parser = argparse.ArgumentParser(
-    prog="python -m hbichat.cmd.client",
-    description="HBI chatting client",
-    epilog="connect to a chat server to start chatting",
-)
-cmdl_parser.add_argument(
-    "addr",
-    metavar="service_address",
-    nargs="?",
-    const="localhost:3232",
-    help="in form of <host>:<port>",
-)
-cmdl_parser.add_argument(
-    "-s",
-    "--server",
-    metavar="server_host",
-    nargs=1,
-    default=None,
-    help="server IP or name",
-)
-cmdl_parser.add_argument(
-    "-p", "--port", metavar="server_port", nargs=1, default=None, help="IP port number"
-)
-prog_args = cmdl_parser.parse_args()
+        # expose chatter instance
+        global chatter
 
-# apply command line arguments
-service_addr = {"host": None, "port": 3232}
-if prog_args.addr is not None:
-    host, *port = prog_args.addr.rsplit(":", 1)
-    service_addr["host"] = host
-    if port:
-        service_addr["port"] = int(port[0])
-if prog_args.server is not None:
-    service_addr["host"] = prog_args.server[0]
-if prog_args.port is not None:
-    service_addr["port"] = prog_args.port[0]
-if not service_addr["host"]:
-    service_addr["host"] = "127.0.0.1"
+        # TUI loop of this line getter is to be run by main thread
+        line_getter = GetLine(f">{po.remote_addr!s}> ")
 
-# define global var for the chatter consumer instance
-# the instance must be created in the thread running the asyncio loop,
-# where its `line_getter.get_line()` coroutine will be awaited.
-chatter = None
-getting_line = threading.Event()  # get set after chatter created & assigned
+        # the chatter consumer instance
+        chatter = Chatter(line_getter, po, ho)
 
-
-async def do_chatting():
-    global chatter
-
-    try:
-
-        ps1 = f">{service_addr['host']!s}:{service_addr['port']!s}> "
-        chatter = Chatter(GetLine(ps1))
-        getting_line.set()
-
-        # define the service connection
-        hbic = hbi.HBIC(
-            # the service address
-            service_addr,
-            # the consumer context
-            {
-                # expose standard named values for interop
-                **{x: getattr(hbi.interop, x) for x in hbi.interop.__all__},
-                # expose all shared type of data structures
-                **{x: getattr(ds, x) for x in ds.__all__},
-                # expose all consumer methods of the chatter instance
-                **{mth: getattr(chatter, mth) for mth in chatter.consumer_methods},
-            },
+        # expose all consumer methods of the chatter instance
+        globals().update(
+            {mth: getattr(chatter, mth) for mth in chatter.consumer_methods}
         )
-        # connect the service, get the posting & hosting endpoint
-        async with hbic as (po, ho):  # auto close hbic as a context manager
 
-            # keep chatting until user exit or connection lost etc.
-            await chatter.keep_chatting()
+        # assign the sync variable to tell main thread to start TUI loop
+        tui_liner.set(line_getter)
 
-        logger.debug("Done chatting.")
+    # show case the hbi callback on wire disconnected
+    def hbi_disconnected(exc=None):
+        if exc is not None:
+            logger.error(f"Connection to chatting service lost: {exc!s}")
 
-    except Exception:
-        import os, signal
-
-        logger.fatal(f"Error in chatting.", exc_info=True)
-
-        # `threading.Event.wait` won't catch SystemExit so far.
-        # by sending self a SIGINT, we then make KeyboardInterrupt caught in
-        # `line_getter.read_loop()`
-        os.kill(os.getpid(), signal.SIGINT)
-
-        sys.exit(3)
+        # stop TUI loop in main thread
+        if tui_liner.is_set():
+            tui_liner.get().stop()
 
 
-# run coroutines in another dedicated thread, so as to spare main thread to run TUI loop
-threading.Thread(target=asyncio.run, args=(do_chatting(),), name="ChatClient").start()
+elif "__main__" == __name__:
+    # entry point of `python -m hbichat.cmd.client`
 
-getting_line.wait()  # wait until the chatter consumer instance is created
-assert chatter is not None
-# read line forever in main thread, this is necessary for `KeyboardInterrupt`
-# to be properly caught by the TUI loop.
-chatter.line_getter.read_loop()
+    import argparse
+    import asyncio
+    import runpy
+    import sys
+    import threading
+
+    import hbi
+
+    from ...pkg import *
+
+    logger = get_logger(__package__)
+
+    if not sys.stdout.isatty():
+        logger.fatal("Can only run with a terminal!")
+        sys.exit(1)
+
+    # take arguments from command line
+    cmdl_parser = argparse.ArgumentParser(
+        prog="python -m hbichat.cmd.client",
+        description="HBI chatting client",
+        epilog="connect to a chat server to start chatting",
+    )
+    cmdl_parser.add_argument(
+        "addr",
+        metavar="service_address",
+        nargs="?",
+        const="localhost:3232",
+        help="in form of <host>:<port>",
+    )
+    cmdl_parser.add_argument(
+        "-s",
+        "--server",
+        metavar="server_host",
+        nargs=1,
+        default=None,
+        help="server IP or name",
+    )
+    cmdl_parser.add_argument(
+        "-p",
+        "--port",
+        metavar="server_port",
+        nargs=1,
+        default=None,
+        help="IP port number",
+    )
+    prog_args = cmdl_parser.parse_args()
+
+    # apply command line arguments
+    service_addr = {"host": None, "port": 3232}
+    if prog_args.addr is not None:
+        host, *port = prog_args.addr.rsplit(":", 1)
+        service_addr["host"] = host
+        if port:
+            service_addr["port"] = int(port[0])
+    if prog_args.server is not None:
+        service_addr["host"] = prog_args.server[0]
+    if prog_args.port is not None:
+        service_addr["port"] = prog_args.port[0]
+    if not service_addr["host"]:
+        service_addr["host"] = "127.0.0.1"
+
+    tui_liner = SyncVar()
+
+    async def do_chatting():
+        try:
+
+            # define the service connection
+            hbic = hbi.HBIC(
+                # the service address
+                service_addr,
+                # the consumer context
+                runpy.run_module(
+                    # reuse this module file for both consumer context and `python -m` entry point
+                    mod_name=__package__,
+                    # invoke HBI context part of this module
+                    run_name="__chat_client__",
+                    # pass sync variables for coroutines to assign
+                    init_globals={"tui_liner": tui_liner},
+                ),
+            )
+            # connect the service, get the posting & hosting endpoint
+            async with hbic as (po, ho):  # auto close hbic as a context manager
+
+                # keep chatting until user exit or connection lost etc.
+                await hbic.ctx["chatter"].keep_chatting()
+
+            logger.debug("Done chatting.")
+
+        except Exception:
+            import os, signal
+
+            logger.fatal(f"Error in chatting.", exc_info=True)
+
+            # `threading.Event.wait` won't catch SystemExit so far.
+            # by sending self a SIGINT, we then make KeyboardInterrupt caught in
+            # `line_getter.read_loop()`
+            os.kill(os.getpid(), signal.SIGINT)
+
+            sys.exit(3)
+
+    # run coroutines in another dedicated thread, so as to spare main thread to run TUI loop
+    threading.Thread(
+        target=asyncio.run, args=[do_chatting()], name="ChatClient"
+    ).start()
+
+    # obtain the line getter, it'll be set by a coroutine upon HBI connection made to chat service
+    line_getter = tui_liner.get()
+
+    # read line forever in main thread, this is necessary for `KeyboardInterrupt`
+    # to be properly caught by the TUI loop.
+    line_getter.read_loop()

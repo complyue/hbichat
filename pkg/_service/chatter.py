@@ -32,25 +32,21 @@ class Chatter:
     """
 
     # name of methods to be exposed for peer scripting
-    service_methods = ["__hbi_init__", "SetNick", "GotoRoom", "Say", "hbi_disconnected"]
+    service_methods = ["SetNick", "GotoRoom", "Say"]
 
     def __init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
         self.po = po
         self.ho = ho
 
         self.in_room = prepare_room()
-        self.nick = f"Stranger?"
-
-    async def __hbi_init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
-        assert po is self.po and ho is self.ho
-
         self.nick = f"Stranger${self.po.remote_addr!s}"
 
-        async with po.co() as co:
+    async def welcome_chatter(self):
+        async with self.po.co() as co:
             # send welcome notice to new comer
             welcome_lines = [
                 f"""
-@@ Welcome {self.nick!s}, this is chat service at {ho.local_addr!s} !
+@@ Welcome {self.nick!s}, this is chat service at {self.ho.local_addr!s} !
  -
 @@ There're {len(rooms)} rooms open, and you are in #{self.in_room.room_id!s} now.
 """
@@ -144,7 +140,3 @@ RoomMsgs({room_msgs!r})
 Said({msg_id!r})
 """
         )
-
-    # show case the hbi callback on wire disconnected
-    def hbi_disconnected(self, exc=None):
-        self.in_room.chatters.remove(self)
