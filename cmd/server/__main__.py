@@ -2,7 +2,6 @@ import argparse
 import asyncio
 
 import hbi
-from hbi.pkg import interop
 
 from ...pkg import ds
 from ...pkg._service import *
@@ -67,7 +66,7 @@ def create_chatter_serving_ctx(po, ho) -> dict:
 
     return {
         # expose standard named values for interop
-        **{x: getattr(interop, x) for x in interop.__all__},
+        **{x: getattr(hbi.interop, x) for x in hbi.interop.__all__},
         # expose all shared type of data structures
         **{x: getattr(ds, x) for x in ds.__all__},
         # expose all service methods of the chatter instance

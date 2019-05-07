@@ -4,7 +4,6 @@ import sys
 import threading
 
 import hbi
-from hbi.pkg import interop
 
 from ...pkg import *
 from ...pkg import ds
@@ -78,7 +77,7 @@ async def do_chatting():
             # the consumer context
             {
                 # expose standard named values for interop
-                **{x: getattr(interop, x) for x in interop.__all__},
+                **{x: getattr(hbi.interop, x) for x in hbi.interop.__all__},
                 # expose all shared type of data structures
                 **{x: getattr(ds, x) for x in ds.__all__},
                 # expose all consumer methods of the chatter instance
