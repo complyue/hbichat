@@ -1,5 +1,4 @@
-// Consumer API for chat service.
-package chat
+package consumer
 
 import (
 	"fmt"

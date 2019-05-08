@@ -1,5 +1,5 @@
 if "__chat_client__" == __name__:
-    # Initializing HBI context reacting to chat service.
+    # Initializing the HBI consumer context that reacting to chat service.
 
     # expose standard named values for interop
     from hbi.interop import *
@@ -30,8 +30,7 @@ if "__chat_client__" == __name__:
         # assign the sync variable to tell main thread to start TUI loop
         tui_liner.set(line_getter)
 
-    # show case the hbi callback on wire disconnected
-    def hbi_disconnected(exc=None):
+    async def __hbi_cleanup__(exc=None):
         if exc is not None:
             logger.error(f"Connection to chatting service lost: {exc!s}")
 

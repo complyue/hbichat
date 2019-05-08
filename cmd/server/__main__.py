@@ -1,5 +1,5 @@
 if "__chat_server__" == __name__:
-    # Initializing HBI context reacting to chat consumers.
+    # Initializing the HBI service context that reacting to chat consumers.
 
     # expose standard named values for interop
     from hbi.interop import *
@@ -24,12 +24,13 @@ if "__chat_server__" == __name__:
         # send welcome message to new comer
         await chatter.welcome_chatter()
 
-    # show case the hbi callback on wire disconnected
-    def hbi_disconnected(self, exc=None):
+    async def __hbi_cleanup__(self, exc=None):
         if exc is not None:
             logger.error(
                 f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {exc!s}"
             )
+        else:
+            logger.debug(f"Chatting consumer {chatter.po.remote_addr!s} disconnected.")
 
         chatter.in_room.chatters.remove(chatter)
 

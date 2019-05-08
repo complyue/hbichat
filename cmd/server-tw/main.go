@@ -1,12 +1,14 @@
+// Service reacting context testing-water
+
 package main
 
 import (
 	"flag"
 	"log"
-	"net"
 
-	"github.com/complyue/hbi"
 	service "github.com/complyue/hbichat/pkg/_service"
+
+	"github.com/complyue/hbi/pkg/repl"
 	"github.com/golang/glog"
 )
 
@@ -19,20 +21,10 @@ func init() {
 	}
 }
 
-var (
-	servAddr string
-)
-
-func init() {
-	flag.StringVar(&servAddr, "serv", "localhost:3232", "HBI serving address")
-}
-
 func main() {
-
 	flag.Parse()
 
-	hbi.ServeTCP(service.NewServiceContext, servAddr, func(listener *net.TCPListener) {
-		log.Println("HBI chat service listening:", listener.Addr())
-	})
+	he := service.NewServiceEnv()
 
+	repl.ReplWith(he)
 }
