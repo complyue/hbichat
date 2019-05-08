@@ -1,8 +1,3 @@
-"""
-Data structures to be passed over wire.
-
-"""
-
 import struct
 import time
 from datetime import datetime
