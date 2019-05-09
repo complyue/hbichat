@@ -6,7 +6,7 @@ import (
 	"flag"
 	"log"
 
-	service "github.com/complyue/hbichat/pkg/_service"
+	"github.com/complyue/hbichat/pkg/consumer"
 
 	"github.com/complyue/hbi/pkg/repl"
 	"github.com/golang/glog"
@@ -24,7 +24,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	he := service.NewServiceEnv()
+	he := consumer.NewConsumerEnv()
 
 	repl.ReplWith(
 		he, // hosting environment

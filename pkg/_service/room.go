@@ -10,16 +10,16 @@ import (
 
 // global states for a chat service instance
 var (
-	mu    sync.Mutex
-	rooms = make(map[string]*Room)
+	rooms      = make(map[string]*Room)
+	roomsMutex sync.Mutex
 )
 
 func prepareRoom(roomID string) (room *Room) {
 	if roomID == "" {
 		roomID = "Lobby"
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	roomsMutex.Lock()
+	defer roomsMutex.Unlock()
 
 	var ok bool
 	if room, ok = rooms[roomID]; !ok {
@@ -29,7 +29,7 @@ func prepareRoom(roomID string) (room *Room) {
 	return
 }
 
-// room struct resides in service side only
+// Room struct resides in server side only
 type Room struct {
 	sync.Mutex        // embed a mutex
 	roomID            string
@@ -89,7 +89,9 @@ RoomMsgs(%#v)`, notifOut)
 						delete(room.chatters, chatter)
 					}
 				}()
-				chatter.po.Notif(notifCode)
+				if err := chatter.po.Notif(notifCode); err != nil {
+					panic(err)
+				}
 			}()
 		}
 	}
@@ -99,6 +101,9 @@ RoomMsgs(%#v)`, notifOut)
 // when a new message is posted. but cache won't be generated until a new
 // comer needs to see it
 func (room *Room) recentMsgLog() *ds.MsgsInRoom {
+	room.Lock()
+	defer room.Unlock()
+
 	if room.cachedMsgLog == nil {
 		rms := &ds.MsgsInRoom{
 			RoomID: room.roomID,
@@ -111,7 +116,7 @@ func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 	return room.cachedMsgLog
 }
 
-// use a singly linked msg list for each room at service side
+// MsgAtServer is a singly linked msg list for each room at server side,
 // so as all tail pointers advance beyond a message record, it becomes eligible
 // for garbage collection automatically
 type MsgAtServer struct {

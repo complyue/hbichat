@@ -2,7 +2,8 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Server TestWater -- :( delve not supporting TUI programs yet",
+            // :( delve not supporting TUI programs yet
+            "name": "Server TestWater - Go",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -10,6 +11,19 @@
                 "GOMAXPROCS": "2"
             },
             "program": "${workspaceFolder}/cmd/server-tw",
+            "args": [
+                "-v=3"
+            ]
+        },
+        {
+            "name": "Chat Server - Go",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "GOMAXPROCS": "2"
+            },
+            "program": "${workspaceFolder}/cmd/server",
             "args": [
                 "-v=3"
             ]
@@ -52,4 +66,3 @@
         }
     ]
 }
-I

@@ -3,166 +3,208 @@ package consumer
 import (
 	"fmt"
 	"io"
-	"os"
-	"time"
+	"strings"
 
-	hbi "github.com/complyue/hbigo"
-	"github.com/complyue/hbigo/pkg/errors"
+	"github.com/complyue/hbi"
+	"github.com/complyue/hbi/interop"
+	"github.com/complyue/hbi/pkg/errors"
+	"github.com/complyue/hbichat/pkg/ds"
+	"github.com/complyue/liner"
+	"github.com/golang/glog"
 )
 
-// interface for chat service consumers.
-type ConsumerAPI struct {
-	ctx *consumerContext
+func NewConsumerEnv() *hbi.HostingEnv {
+	he := hbi.NewHostingEnv()
 
-	Nick string
-}
+	// expose names for interop
+	interop.ExposeInterOpValues(he)
 
-// get the hosting context to be used to establish a connection over HBI wire
-func (api *ConsumerAPI) GetHoContext() hbi.HoContext {
-	if api.ctx == nil {
-		api.ctx = &consumerContext{
-			HoContext: hbi.NewHoContext(),
+	// expose constructor functions for shared data structures
+	he.ExposeCtor(ds.NewMsg, "")
+	he.ExposeCtor(ds.NewMsgsInRoom, "")
 
-			inRoom: "?.?",
+	var (
+		serviceAddr = "??"
+		chatter     *Chatter
+	)
 
-			roomWelcome: make(chan string),
-			msgPost:     make(chan string),
+	he.ExposeFunction("__hbi_init__", func(po hbi.PostingEnd, ho hbi.HostingEnd) {
+		serviceAddr = fmt.Sprintf("%s", po.RemoteAddr())
+
+		line := liner.NewLiner()
+		chatter = &Chatter{
+			line: line,
+			po:   po, ho: ho,
+			nick: "?", inRoom: "?",
+			prompt: fmt.Sprintf(">%s> ", serviceAddr),
 		}
-	}
-	return api.ctx
+
+		he.ExposeReactor(chatter)
+
+		go func() {
+			defer line.Close()
+
+			defer func() {
+				if e := recover(); e != nil {
+					err := errors.RichError(e)
+					ho.Disconnect(fmt.Sprintf("%+v", err), false)
+				} else {
+					ho.Close()
+				}
+			}()
+
+			chatter.keepChatting()
+		}()
+	})
+
+	he.ExposeFunction("__hbi_cleanup__", func(err error) {
+		if err != nil {
+			glog.Infof("Connection to chatting service %s lost: %+v", serviceAddr, err)
+		} else if glog.V(1) {
+			glog.Infof("Disconnected from chatting service %s", serviceAddr)
+		}
+	})
+
+	return he
 }
 
-// an `io.Writer` to be passed in here, is an over simplified design.
-// a GUI oriented API set can be defined, with much more, sophisticated methods,
-// to facilitate a human facing display interface.
-func (api *ConsumerAPI) SetOutput(output io.Writer) {
-	api.ctx.output = func() io.Writer {
-		return output
-	}
+type Chatter struct {
+	line *liner.State
+
+	po hbi.PostingEnd
+	ho hbi.HostingEnd
+
+	nick     string
+	inRoom   string
+	sentMsgs []string
+
+	prompt string
 }
 
-func (api *ConsumerAPI) WaitWelcome() string {
-	ctx := api.ctx
-	msg := <-ctx.roomWelcome
-	select {
-	case s := <-ctx.msgPost:
-		ctx.Show(s)
-	case <-time.After(300 * time.Millisecond):
-		// wait a bit before returning to prompt, in hope to see more notifications before prompt
-	}
-	return msg
-}
-
-func (api *ConsumerAPI) SetNick(nick string) {
-	api.ctx.PoToPeer().Notif(fmt.Sprintf(`
+func (chatter *Chatter) setNick(nick string) {
+	if err := chatter.po.Notif(fmt.Sprintf(`
 SetNick(%#v)
-`, nick))
-	api.Nick = nick
-}
-
-func (api *ConsumerAPI) Goto(room string) {
-	ctx := api.ctx
-	ctx.goto_(room)
-}
-
-func (api *ConsumerAPI) Say(msg string) {
-	ctx := api.ctx
-	ctx.PoToPeer().Notif(fmt.Sprintf(`
-Say(%#v)
-`, msg))
-	select {
-	case s := <-ctx.msgPost:
-		ctx.Show(s)
-	case <-time.After(200 * time.Millisecond):
-		// wait a bit before returning to prompt, in hope to see own msg above the prompt
-	}
-}
-
-// one hosting context is created per consumer connection to a service.
-// exported fields/methods are implementation details accommodating code from
-// service, to materialize effects pushed by service.
-// unexported fields/methods are implementation details necessary at
-// consumer endpoint for house keeping etc.
-type consumerContext struct {
-	hbi.HoContext
-
-	output func() io.Writer
-
-	inRoom string
-
-	roomWelcome chan string
-	msgPost     chan string
-}
-
-// give types to be exposed, with nil pointer values to each
-func (ctx *consumerContext) TypesToExpose() []interface{} {
-	return []interface{}{
-		(*MsgsInRoom)(nil),
-		(*Msg)(nil),
-	}
-}
-
-func (ctx *consumerContext) getOutput() io.Writer {
-	if ctx.output != nil {
-		return ctx.output()
-	}
-	return os.Stderr
-}
-
-func (ctx *consumerContext) goto_(room string) {
-	ctx.PoToPeer().Notif(fmt.Sprintf(`
-Goto(%#v)
-`, room))
-	select {
-	case <-ctx.Done(): // already disconnected
-		fmt.Fprintf(ctx.getOutput(), "Disconnected by server.")
-	case msg := <-ctx.roomWelcome:
-		fmt.Fprintln(ctx.getOutput(), msg)
-	case <-time.After(2 * time.Second):
-		fmt.Fprintf(ctx.getOutput(),
-			"[%s] Not entered room #%s yet, maybe the service is busy.\n",
-			time.Now().Format("15:04:05"), room)
-	}
-	select {
-	case s := <-ctx.msgPost:
-		ctx.Show(s)
-	case <-time.After(300 * time.Millisecond):
-		// wait a bit before returning to prompt, in hope to see recent msg log before prompt
-	}
-}
-
-func (ctx *consumerContext) EnteredRoom(room string, welcomeMsg string) {
-	ctx.inRoom = room
-	select {
-	case ctx.roomWelcome <- welcomeMsg:
-	default:
-		// the goto request has timed out waiting
-		fmt.Fprintf(ctx.getOutput(), "[%s] Some late, but:\n%s\n",
-			time.Now().Format("15:04:05"), welcomeMsg)
-	}
-}
-
-func (ctx *consumerContext) RoomMsgs() {
-	rms, err := ctx.Ho().CoRecvObj()
-	if err != nil {
+`, nick)); err != nil {
 		panic(err)
 	}
-	var s string
-	switch rms := rms.(type) {
-	case *MsgsInRoom:
-		s = rms.String()
-	default:
-		panic(errors.New(fmt.Sprintf("RoomMsgs got type %T ?!", rms)))
-	}
-	select {
-	case <-ctx.Done(): // already disconnected
-	case ctx.msgPost <- s: // try give it to whoever waiting
-	case <-time.After(10 * time.Millisecond):
-		// just print out if no one waiting atm
-		fmt.Fprintln(ctx.getOutput(), s)
+}
+
+func (chatter *Chatter) gotoRoom(roomID string) {
+	if err := chatter.po.Notif(fmt.Sprintf(`
+GotoRoom(%#v)
+`, roomID)); err != nil {
+		panic(err)
 	}
 }
 
-func (ctx *consumerContext) Show(msg string) {
-	fmt.Fprintln(ctx.getOutput(), msg)
+func (chatter *Chatter) say(msg string) {
+	msgID := -1
+	// try find an empty slot to hold this pending message
+	for i := range chatter.sentMsgs {
+		if chatter.sentMsgs[i] == "" {
+			msgID = i
+			break
+		}
+	}
+	if msgID < 0 { // extend a new slot for this pending message
+		msgID = len(chatter.sentMsgs)
+		chatter.sentMsgs = append(chatter.sentMsgs, msg)
+	}
+	// prepare binary data
+	msgBuf := []byte(msg)
+	// showcase notif with binary payload
+	if err := chatter.po.NotifData(fmt.Sprintf(`
+Say(%d, %d)
+`, msgID, len(msgBuf)), msgBuf); err != nil {
+		panic(err)
+	}
+}
+
+func (chatter *Chatter) keepChatting() {
+
+	defer fmt.Println("\nBye.")
+
+	for {
+		select {
+		case <-chatter.po.Done(): // disconnected from chat service
+			return
+		default: // still connected
+		}
+
+		code, err := chatter.line.Prompt(chatter.prompt)
+		if err != nil {
+			switch err {
+			case io.EOF: // Ctrl^D to end chatting
+			case liner.ErrPromptAborted: // Ctrl^C to giveup whatever input
+				continue
+			default:
+				panic(errors.RichError(err))
+			}
+			break
+		}
+		if len(strings.TrimSpace(code)) < 1 {
+			// only white space(s) or just enter pressed
+			continue
+		}
+		chatter.line.AppendHistory(code)
+
+		if code[0] == '#' {
+			// goto the specified room
+			roomID := strings.TrimSpace(code[1:])
+			chatter.gotoRoom(roomID)
+		} else if code[0] == '$' {
+			// change nick
+			nick := strings.TrimSpace(code[1:])
+			chatter.setNick(nick)
+		} else {
+			msg := code
+			chatter.say(msg)
+		}
+	}
+
+}
+
+func (chatter *Chatter) updatePrompt() {
+	chatter.prompt = fmt.Sprintf("%s@%s#%s: ", chatter.nick, chatter.po.RemoteAddr(), chatter.inRoom)
+	chatter.line.ChangePrompt(chatter.prompt)
+}
+
+func (chatter *Chatter) NickAccepted(nick string) {
+	chatter.nick = nick
+	chatter.updatePrompt()
+}
+
+func (chatter *Chatter) InRoom(roomID string) {
+	chatter.inRoom = roomID
+	chatter.updatePrompt()
+}
+
+func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
+
+}
+
+func (chatter *Chatter) Said(msgID int) {
+	msg := chatter.sentMsgs[msgID]
+	chatter.line.HidePrompt()
+	fmt.Printf("@@ Your message [%d] has been displayed:\n  > %s", msgID, msg)
+	chatter.line.ShowPrompt()
+	chatter.sentMsgs[msgID] = ""
+}
+
+func (chatter *Chatter) ShowNotice(text string) {
+	chatter.line.HidePrompt()
+	fmt.Println(text)
+	chatter.line.ShowPrompt()
+}
+
+func (chatter *Chatter) ChatterJoined(nick string, roomID string) {
+	chatter.line.HidePrompt()
+	fmt.Printf("@@ %s has joined #%s\n", nick, roomID)
+	chatter.line.ShowPrompt()
+}
+
+func (chatter *Chatter) ChatterLeft(nick string, roomID string) {
+	chatter.line.HidePrompt()
+	fmt.Printf("@@ %s has left #%s\n", nick, roomID)
+	chatter.line.ShowPrompt()
 }

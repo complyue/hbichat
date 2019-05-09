@@ -1,5 +1,5 @@
 """
-simple chatting service implementation to show case HBI paradigms.
+simple chatting service implementation to showcase HBI paradigms.
 
 name of this package starts with an under score so that it's hidden 
 from exports of the root `hbichat` package. while the `consumer` 

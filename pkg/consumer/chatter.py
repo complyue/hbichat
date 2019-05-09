@@ -38,6 +38,65 @@ class Chatter:
         self.in_room = "?"
         self.sent_msgs = []
 
+    async def _set_nick(self, nick: str):
+        await self.po.notif(
+            rf"""
+SetNick({nick!r})
+"""
+        )
+
+    async def _goto_room(self, room_id: str):
+        await self.po.notif(
+            rf"""
+GotoRoom({room_id!r})
+"""
+        )
+
+    async def _say(self, msg: str):
+        try:
+            # try find an empty slot to hold this pending message
+            msg_id = self.sent_msgs.index(None)
+            self.sent_msgs[msg_id] = msg
+        except ValueError:
+            # extend a new slot for this pending message
+            msg_id = len(self.sent_msgs)
+            self.sent_msgs.append(msg)
+        # prepare binary data
+        msg_buf = msg.encode("utf-8")
+        # showcase notif with binary payload
+        await self.po.notif_data(
+            rf"""
+Say({msg_id!r}, {len(msg_buf)!r})
+""",
+            msg_buf,
+        )
+
+    async def keep_chatting(self):
+
+        while self.ho.is_connected():  # until disconnected from chat service
+
+            sl = await self.line_getter.get_line()
+            if sl is None:
+                # User pressed Ctrl^D to end chatting.
+                break
+
+            if len(sl.strip()) < 1:  # only white space(s) or just enter pressed
+                continue
+
+            if sl[0] == "#":
+                # goto the specified room
+                room_id = sl[1:].strip()
+                await self._goto_room(room_id)
+            elif sl[0] == "$":
+                # change nick
+                nick = sl[1:].strip()
+                await self._set_nick(nick)
+            else:
+                msg = sl
+                await self._say(msg)
+
+        print("Bye.")
+
     def _update_prompt(self):
         self.line_getter.ps1 = f"{self.nick!s}@{self.po.remote_addr!s}#{self.in_room}: "
 
@@ -53,55 +112,6 @@ class Chatter:
         if room_msgs.room_id != self.in_room:
             self.line_getter.show(f" *** Messages from #{room_msgs.room_id!s} ***")
         self.line_getter.show("\n".join(str(msg) for msg in room_msgs.msgs))
-
-    async def keep_chatting(self):
-
-        while self.ho.is_connected():
-
-            sl = await self.line_getter.get_line()
-            if sl is None:
-                # User pressed Ctrl^D to end chatting.
-                break
-            sl = sl.strip()
-
-            if len(sl) < 1:  # only white space(s) or just enter pressed
-                continue
-
-            if sl[0] == "#":
-                # goto the specified room
-                room_id = sl[1:].strip()
-                await self.po.notif(
-                    rf"""
-GotoRoom({room_id!r})
-"""
-                )
-            elif sl[0] == "$":
-                # change nick
-                nick = sl[1:].strip()
-                await self.po.notif(
-                    rf"""
-SetNick({nick!r})
-"""
-                )
-            else:
-                msg = sl
-                try:
-                    # try find an empty slot to hold this pending message
-                    msg_id = self.sent_msgs.index(None)
-                    self.sent_msgs[msg_id] = msg
-                except ValueError:
-                    # extend a new slot for this pending message
-                    msg_id = len(self.sent_msgs)
-                    self.sent_msgs.append(msg)
-                msg_buf = msg.encode("utf-8")
-                await self.po.notif_data(
-                    rf"""
-Say({msg_id!r}, {len(msg_buf)!r})
-""",
-                    msg_buf,
-                )
-
-        print("Bye.")
 
     def Said(self, msg_id: int):
         msg = self.sent_msgs[msg_id]

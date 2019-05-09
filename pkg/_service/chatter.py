@@ -48,30 +48,31 @@ class Chatter:
                 f"""
 @@ Welcome {self.nick!s}, this is chat service at {self.ho.local_addr!s} !
  -
-@@ There're {len(rooms)} rooms open, and you are in #{self.in_room.room_id!s} now.
+@@ There're {len(rooms)} room(s) open, and you are in #{self.in_room.room_id!s} now.
 """
             ]
             for room_id, room in rooms.items():
                 welcome_lines.append(
                     f"""  -*-\t{len(room.chatters)!r} chatter(s) in room #{room.room_id!s}"""
                 )
-            notice_text = "\n".join(str(line) for line in welcome_lines)
+            welcome_text = "\n".join(str(line) for line in welcome_lines)
             await co.send_code(
                 f"""
 NickAccepted({self.nick!r})
 InRoom({self.in_room.room_id!r})
-ShowNotice({notice_text!r})
+ShowNotice({welcome_text!r})
 """
             )
 
-            # send new comer info to other chatters already in room
-            for chatter in self.in_room.chatters:
-                await chatter.po.notif(
-                    f"""
+        # send new comer info to other chatters already in room
+        for chatter in self.in_room.chatters:
+            await chatter.po.notif(
+                f"""
 ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
 """
-                )
+            )
 
+        # add this chatter into its 1st room
         self.in_room.chatters.add(self)
 
     async def SetNick(self, nick: str):
@@ -83,11 +84,11 @@ ShowNotice({"You are now known as `"+self.nick+"`"!r})
 """
         )
 
-    # show case a simple asynchronous service method
     async def GotoRoom(self, room_id):
         old_room = self.in_room
         new_room = prepare_room(str(room_id).strip())
 
+        # leave old room
         old_room.chatters.remove(self)
         for chatter in old_room.chatters:
             await chatter.po.notif(
@@ -102,6 +103,7 @@ ChatterJoined({self.nick!r}, {new_room.room_id!r})
 """
             )
 
+        # enter new room
         self.in_room = new_room
         new_room.chatters.add(self)
         welcome_lines = [
@@ -109,8 +111,10 @@ ChatterJoined({self.nick!r}, {new_room.room_id!r})
 @@ You are in #{new_room.room_id!s} now, {len(new_room.chatters)} chatter(s).
 """
         ]
+
+        # send feedback
         room_msgs = MsgsInRoom(new_room.room_id, new_room.recent_msg_log())
-        notice_text = "\n".join(str(line) for line in welcome_lines)
+        welcome_text = "\n".join(str(line) for line in welcome_lines)
         await self.ho.co.send_code(
             f"""
 InRoom({new_room.room_id!r})
@@ -119,7 +123,7 @@ RoomMsgs({room_msgs!r})
 """
         )
 
-    # show case a service method with binary payload, that to be received from
+    # showcase a service method with binary payload, that to be received from
     # current hosting conversation
     async def Say(self, msg_id, msg_len: int):
 

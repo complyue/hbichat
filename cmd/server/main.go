@@ -4,9 +4,11 @@ import (
 	"flag"
 	"log"
 	"net"
+	"os"
 
 	"github.com/complyue/hbi"
 	service "github.com/complyue/hbichat/pkg/_service"
+	"github.com/complyue/hbichat/pkg/errors"
 	"github.com/golang/glog"
 )
 
@@ -24,15 +26,22 @@ var (
 )
 
 func init() {
-	flag.StringVar(&servAddr, "serv", "localhost:3232", "HBI serving address")
+	flag.StringVar(&servAddr, "serv", "localhost:3232", "HBI chat service address")
 }
 
 func main() {
 
 	flag.Parse()
 
-	hbi.ServeTCP(service.NewServiceContext, servAddr, func(listener *net.TCPListener) {
-		log.Println("HBI chat service listening:", listener.Addr())
+	defer func() {
+		if err := recover(); err != nil {
+			glog.Errorf("Unexpected error: %+v", errors.RichError(err))
+			os.Exit(3)
+		}
+	}()
+
+	hbi.ServeTCP(service.NewServiceEnv, servAddr, func(listener *net.TCPListener) {
+		glog.Infof("HBI chat service listening: %s", listener.Addr())
 	})
 
 }

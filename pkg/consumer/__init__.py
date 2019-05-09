@@ -1,5 +1,5 @@
 """
-simple chatting consumer implementation to show case HBI paradigms.
+simple chatting consumer implementation to showcase HBI paradigms.
 
 """
 from .chatter import *

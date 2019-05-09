@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/complyue/hbi"
 	"github.com/complyue/hbi/interop"
@@ -63,20 +64,123 @@ type Chatter struct {
 
 func (chatter *Chatter) welcomeChatter() {
 
-	chatter.inRoom.chatters[chatter] = struct{}{}
+	func() { // send welcome notice to new comer
+		co, err := chatter.po.Co(nil)
+		if err != nil {
+			panic(err)
+		}
+		defer co.Close()
+		var welcomeText strings.Builder
+		welcomeText.WriteString(fmt.Sprintf(`
+@@ Welcome %s, this is chat service at %s !
+ -
+@@ There're %d room(s) open, and you are in #%s now.
+`, chatter.nick, chatter.ho.LocalAddr(), len(rooms), chatter.inRoom.roomID))
+		for roomID, room := range rooms {
+			welcomeText.WriteString(fmt.Sprintf("  -*-\t%d chatter(s) in room #%s\n", len(room.chatters), roomID))
+		}
+		if err = co.SendCode(fmt.Sprintf(`
+NickAccepted(%#v)
+InRoom(%#v)
+ShowNotice(%#v)
+`, chatter.nick, chatter.inRoom.roomID, welcomeText.String())); err != nil {
+			panic(err)
+		}
+	}()
 
+	// send new comer info to other chatters already in room
+	for otherChatter := range chatter.inRoom.chatters {
+		otherChatter.po.Notif(fmt.Sprintf(`
+ChatterJoined(%#v, %#v)
+`, chatter.nick, chatter.inRoom.roomID))
+	}
+
+	// add this chatter into its 1st room
+	chatter.inRoom.Lock()
+	chatter.inRoom.chatters[chatter] = struct{}{}
+	chatter.inRoom.Unlock()
+}
+
+func (chatter *Chatter) SetNick(nick string) {
+	nick = strings.TrimSpace(nick)
+	if nick == "" {
+		chatter.nick = fmt.Sprintf("Stranger$%s", chatter.po.RemoteAddr())
+	} else {
+		chatter.nick = nick
+	}
+	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
+NickAccepted(%#v)
+ShowNotice(%#v)
+`, chatter.nick, fmt.Sprintf("You are now known as `%s`", chatter.nick))); err != nil {
+		panic(err)
+	}
 }
 
 func (chatter *Chatter) GotoRoom(roomID string) {
 	oldRoom := chatter.inRoom
 	newRoom := prepareRoom(roomID)
 
-	delete(oldRoom.chatters, chatter)
-	chatter.inRoom = newRoom
-	newRoom.chatters[chatter] = struct{}{}
+	func() { // leave old room
+		oldRoom.Lock()
+		defer oldRoom.Unlock()
+		delete(oldRoom.chatters, chatter)
+		for otherChatter := range oldRoom.chatters {
+			otherChatter.po.Notif(fmt.Sprintf(`
+ChatterLeft(%#v, %#v)
+`, chatter.nick, oldRoom.roomID))
+		}
+	}()
+
+	func() { // enter new room
+		for otherChatter := range newRoom.chatters {
+			if err := otherChatter.po.Notif(fmt.Sprintf(`
+ChatterJoined(%#v, %#v)
+`, chatter.nick, newRoom.roomID)); err != nil {
+				panic(err)
+			}
+		}
+
+		chatter.inRoom = newRoom
+		newRoom.Lock()
+		defer newRoom.Unlock()
+		newRoom.chatters[chatter] = struct{}{}
+	}()
+
+	// send feedback
+	var welcomeText strings.Builder
+	welcomeText.WriteString(fmt.Sprintf(`
+@@ You are in #%s now, %d chatter(s).
+`, newRoom.roomID, len(newRoom.chatters)))
+	roomMsgs := newRoom.recentMsgLog()
+	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
+InRoom(%#v)
+ShowNotice(%#v)
+RoomMsgs(%#v)
+`, newRoom.roomID, welcomeText.String(), roomMsgs)); err != nil {
+		panic(err)
+	}
 
 }
 
-func (chatter *Chatter) Say(msg string) {
+// Say showcase a service method with binary payload, that to be received from
+// current hosting conversation
+func (chatter *Chatter) Say(msgID int, msgLen int) {
+
+	// decode input data
+	msgBuf := make([]byte, msgLen)
+	if err := chatter.ho.Co().RecvData(msgBuf); err != nil {
+		panic(err)
+	}
+
+	// use the input data
+	msg := string(msgBuf)
 	chatter.inRoom.Post(chatter.nick, msg)
+
+	// asynchronously feedback result of the method call
+	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
+Said(%d)
+`, msgID)); err != nil {
+		panic(err)
+	}
+
 }
