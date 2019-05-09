@@ -31,6 +31,10 @@ if "__chat_client__" == __name__:
         tui_liner.set(line_getter)
 
     async def __hbi_cleanup__(exc=None):
+        from ...pkg.log import get_logger
+
+        logger = get_logger(__package__)
+
         if exc is not None:
             logger.error(f"Connection to chatting service lost: {exc!s}")
 

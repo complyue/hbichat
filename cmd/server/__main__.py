@@ -25,6 +25,10 @@ if "__chat_server__" == __name__:
         await chatter.welcome_chatter()
 
     async def __hbi_cleanup__(self, exc=None):
+        from ...pkg.log import get_logger
+
+        logger = get_logger(__package__)
+
         if exc is not None:
             logger.error(
                 f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {exc!s}"
