@@ -56,13 +56,13 @@ func NewServiceEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
-	sync.Mutex // embed a mutex
-
 	po hbi.PostingEnd
 	ho hbi.HostingEnd
 
 	inRoom *Room
 	nick   string
+
+	mu sync.Mutex
 }
 
 func (chatter *Chatter) welcomeChatter() {
@@ -118,9 +118,9 @@ func (chatter *Chatter) SetNick(nick string) {
 		nick = fmt.Sprintf("Stranger$%s", chatter.po.RemoteAddr())
 	}
 
-	chatter.Lock()
+	chatter.mu.Lock()
 	chatter.nick = nick
-	chatter.Unlock()
+	chatter.mu.Unlock()
 
 	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
 NickAccepted(%#v)
@@ -163,9 +163,9 @@ ChatterJoined(%#v, %#v)
 	}()
 
 	// change record state
-	chatter.Lock()
+	chatter.mu.Lock()
 	chatter.inRoom = newRoom
-	chatter.Unlock()
+	chatter.mu.Unlock()
 
 	// send feedback
 	var welcomeText strings.Builder

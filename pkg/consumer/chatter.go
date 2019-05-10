@@ -73,8 +73,6 @@ func NewConsumerEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
-	sync.Mutex // embed a mutex
-
 	line *liner.State
 
 	po hbi.PostingEnd
@@ -85,6 +83,8 @@ type Chatter struct {
 	sentMsgs []string
 
 	prompt string
+
+	mu sync.Mutex
 }
 
 func (chatter *Chatter) setNick(nick string) {
@@ -116,13 +116,13 @@ func (chatter *Chatter) say(msg string) {
 	}
 	if msgID < 0 { // extend a new slot for this pending message
 		msgID = len(chatter.sentMsgs)
-		chatter.Lock()
+		chatter.mu.Lock()
 		chatter.sentMsgs = append(chatter.sentMsgs, msg)
-		chatter.Unlock()
+		chatter.mu.Unlock()
 	} else {
-		chatter.Lock()
+		chatter.mu.Lock()
 		chatter.sentMsgs[msgID] = msg
-		chatter.Unlock()
+		chatter.mu.Unlock()
 	}
 
 	// prepare binary data
@@ -192,16 +192,16 @@ func (chatter *Chatter) updatePrompt() {
 }
 
 func (chatter *Chatter) NickAccepted(nick string) {
-	chatter.Lock()
-	defer chatter.Unlock()
+	chatter.mu.Lock()
+	defer chatter.mu.Unlock()
 
 	chatter.nick = nick
 	chatter.updatePrompt()
 }
 
 func (chatter *Chatter) InRoom(roomID string) {
-	chatter.Lock()
-	defer chatter.Unlock()
+	chatter.mu.Lock()
+	defer chatter.mu.Unlock()
 
 	chatter.inRoom = roomID
 	chatter.updatePrompt()
@@ -219,10 +219,10 @@ func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
 }
 
 func (chatter *Chatter) Said(msgID int) {
-	chatter.Lock()
+	chatter.mu.Lock()
 	msg := chatter.sentMsgs[msgID]
 	chatter.sentMsgs[msgID] = ""
-	chatter.Unlock()
+	chatter.mu.Unlock()
 
 	chatter.line.HidePrompt()
 	fmt.Printf("@@ Your message [%d] has been displayed:\n  > %s\n", msgID, msg)
