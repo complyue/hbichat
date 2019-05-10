@@ -65,7 +65,7 @@ type Chatter struct {
 func (chatter *Chatter) welcomeChatter() {
 
 	func() { // send welcome notice to new comer
-		co, err := chatter.po.Co(nil)
+		co, err := chatter.po.Co()
 		if err != nil {
 			panic(err)
 		}

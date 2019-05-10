@@ -2,8 +2,9 @@
     "version": "0.2.0",
     "configurations": [
         {
-            // :( delve not supporting TUI programs yet
-            "name": "Server TestWater - Go",
+            // delve not supporting TUI programs yet, you need to
+            // put the calls into banner script to debug them
+            "name": "Test Water Server - Go",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -11,6 +12,21 @@
                 "GOMAXPROCS": "2"
             },
             "program": "${workspaceFolder}/cmd/server-tw",
+            "args": [
+                "-v=3"
+            ]
+        },
+        {
+            // delve not supporting TUI programs yet, you need to
+            // put the calls into banner script to debug them
+            "name": "Test Water Client - Go",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "env": {
+                "GOMAXPROCS": "2"
+            },
+            "program": "${workspaceFolder}/cmd/client-tw",
             "args": [
                 "-v=3"
             ]
