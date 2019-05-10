@@ -1,4 +1,4 @@
-// Service reacting context testing-water
+// test the water with service reacting env
 
 package main
 
@@ -26,13 +26,13 @@ func main() {
 
 	he := service.NewServiceEnv()
 
-	repl.ReplWith(
-		he, // hosting environment
+	bannerScript := `
+ps1 = "HBICHAT Server:> "
+print("\n### Exposed artifacts of current hosting env:\n")
+dir()
+`
+	// if debugged with delve, no interactive input can be sent in and as a workaround,
+	// add calls to suspicious stuff from above script to invoke the buggy cases.
 
-		// debugged with delve as for now, no interactive input can be sent in,
-		// put some banner script for debugging here as a workaround.
-
-		// "dir()", // banner script
-		"", // banner script
-	)
+	repl.ReplWith(he, bannerScript)
 }
