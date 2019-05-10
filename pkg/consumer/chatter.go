@@ -14,6 +14,19 @@ import (
 	"github.com/golang/glog"
 )
 
+// process global liner
+var line *liner.State
+
+func init() {
+	line = liner.NewLiner()
+}
+
+func Cleanup() {
+
+	line.Close()
+
+}
+
 func NewConsumerEnv() *hbi.HostingEnv {
 	he := hbi.NewHostingEnv()
 
@@ -32,10 +45,8 @@ func NewConsumerEnv() *hbi.HostingEnv {
 	he.ExposeFunction("__hbi_init__", func(po hbi.PostingEnd, ho hbi.HostingEnd) {
 		serviceAddr = fmt.Sprintf("%s", po.RemoteAddr())
 
-		line := liner.NewLiner()
 		chatter = &Chatter{
-			line: line,
-			po:   po, ho: ho,
+			po: po, ho: ho,
 			nick: "?", inRoom: "?",
 			prompt: fmt.Sprintf(">%s> ", serviceAddr),
 		}
@@ -44,9 +55,6 @@ func NewConsumerEnv() *hbi.HostingEnv {
 
 		go func() {
 			defer func() {
-
-				line.Close()
-
 				if e := recover(); e != nil {
 					err := errors.RichError(e)
 					ho.Disconnect(fmt.Sprintf("%+v", err), false)
@@ -61,8 +69,6 @@ func NewConsumerEnv() *hbi.HostingEnv {
 
 	he.ExposeFunction("__hbi_cleanup__", func(err error) {
 
-		chatter.line.Close()
-
 		if glog.V(1) {
 			glog.Infof("Connection to chatting service %s lost: %+v", serviceAddr, err)
 		}
@@ -73,8 +79,6 @@ func NewConsumerEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
-	line *liner.State
-
 	po hbi.PostingEnd
 	ho hbi.HostingEnd
 
@@ -137,15 +141,6 @@ Say(%d, %d)
 
 func (chatter *Chatter) keepChatting() {
 
-	defer func() {
-		if e := recover(); e != nil {
-			err := errors.RichError(e)
-			glog.Errorf("Unexpected error: %+v", err)
-		}
-
-		fmt.Println("\nBye.")
-	}()
-
 	for {
 		select {
 		case <-chatter.po.Done(): // disconnected from chat service
@@ -153,7 +148,7 @@ func (chatter *Chatter) keepChatting() {
 		default: // still connected
 		}
 
-		code, err := chatter.line.Prompt(chatter.prompt)
+		code, err := line.Prompt(chatter.prompt)
 		if err != nil {
 			switch err {
 			case io.EOF: // Ctrl^D to end chatting
@@ -168,7 +163,7 @@ func (chatter *Chatter) keepChatting() {
 			// only white space(s) or just enter pressed
 			continue
 		}
-		chatter.line.AppendHistory(code)
+		line.AppendHistory(code)
 
 		if code[0] == '#' {
 			// goto the specified room
@@ -188,7 +183,7 @@ func (chatter *Chatter) keepChatting() {
 
 func (chatter *Chatter) updatePrompt() {
 	chatter.prompt = fmt.Sprintf("%s@%s#%s: ", chatter.nick, chatter.po.RemoteAddr(), chatter.inRoom)
-	chatter.line.ChangePrompt(chatter.prompt)
+	line.ChangePrompt(chatter.prompt)
 }
 
 func (chatter *Chatter) NickAccepted(nick string) {
@@ -208,14 +203,14 @@ func (chatter *Chatter) InRoom(roomID string) {
 }
 
 func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
-	chatter.line.HidePrompt()
+	line.HidePrompt()
 	if roomMsgs.RoomID != chatter.inRoom {
 		fmt.Printf(" *** Messages from #%s ***\n", roomMsgs.RoomID)
 	}
 	for i := range roomMsgs.Msgs {
 		fmt.Printf("%+v\n", &roomMsgs.Msgs[i])
 	}
-	chatter.line.ShowPrompt()
+	line.ShowPrompt()
 }
 
 func (chatter *Chatter) Said(msgID int) {
@@ -224,25 +219,25 @@ func (chatter *Chatter) Said(msgID int) {
 	chatter.sentMsgs[msgID] = ""
 	chatter.mu.Unlock()
 
-	chatter.line.HidePrompt()
+	line.HidePrompt()
 	fmt.Printf("@@ Your message [%d] has been displayed:\n  > %s\n", msgID, msg)
-	chatter.line.ShowPrompt()
+	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ShowNotice(text string) {
-	chatter.line.HidePrompt()
+	line.HidePrompt()
 	fmt.Println(text)
-	chatter.line.ShowPrompt()
+	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterJoined(nick string, roomID string) {
-	chatter.line.HidePrompt()
+	line.HidePrompt()
 	fmt.Printf("@@ %s has joined #%s\n", nick, roomID)
-	chatter.line.ShowPrompt()
+	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterLeft(nick string, roomID string) {
-	chatter.line.HidePrompt()
+	line.HidePrompt()
 	fmt.Printf("@@ %s has left #%s\n", nick, roomID)
-	chatter.line.ShowPrompt()
+	line.ShowPrompt()
 }

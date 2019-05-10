@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
-	"os"
 
 	"github.com/complyue/hbi"
 	"github.com/complyue/hbichat/pkg/consumer"
@@ -33,10 +33,15 @@ func main() {
 	flag.Parse()
 
 	defer func() {
+
+		consumer.Cleanup()
+
 		if err := recover(); err != nil {
 			glog.Errorf("Unexpected error: %+v", errors.RichError(err))
-			os.Exit(3)
 		}
+
+		fmt.Println("\nBye.")
+
 	}()
 
 	po, ho, err := hbi.DialTCP(consumer.NewConsumerEnv(), servAddr)
