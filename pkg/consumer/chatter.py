@@ -53,6 +53,7 @@ GotoRoom({room_id!r})
         )
 
     async def _say(self, msg: str):
+        # record msg to send in local log
         try:
             # try find an empty slot to hold this pending message
             msg_id = self.sent_msgs.index(None)
@@ -61,6 +62,7 @@ GotoRoom({room_id!r})
             # extend a new slot for this pending message
             msg_id = len(self.sent_msgs)
             self.sent_msgs.append(msg)
+
         # prepare binary data
         msg_buf = msg.encode("utf-8")
         # showcase notif with binary payload

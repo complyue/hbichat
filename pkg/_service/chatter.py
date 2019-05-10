@@ -113,12 +113,12 @@ ChatterJoined({self.nick!r}, {new_room.room_id!r})
         ]
 
         # send feedback
-        room_msgs = MsgsInRoom(new_room.room_id, new_room.recent_msg_log())
+        room_msgs = new_room.recent_msg_log()
         welcome_text = "\n".join(str(line) for line in welcome_lines)
         await self.ho.co.send_code(
             f"""
 InRoom({new_room.room_id!r})
-ShowNotice({notice_text!r})
+ShowNotice({welcome_text!r})
 RoomMsgs({room_msgs!r})
 """
         )

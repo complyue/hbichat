@@ -52,4 +52,6 @@ func main() {
 	case <-ho.Done():
 	}
 
+	glog.V(1).Infof("Disconnected from chat service at: %s", po.RemoteAddr())
+
 }

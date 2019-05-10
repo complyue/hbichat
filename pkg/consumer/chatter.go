@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"github.com/complyue/hbi"
 	"github.com/complyue/hbi/interop"
@@ -42,9 +43,10 @@ func NewConsumerEnv() *hbi.HostingEnv {
 		he.ExposeReactor(chatter)
 
 		go func() {
-			defer line.Close()
-
 			defer func() {
+
+				line.Close()
+
 				if e := recover(); e != nil {
 					err := errors.RichError(e)
 					ho.Disconnect(fmt.Sprintf("%+v", err), false)
@@ -58,17 +60,21 @@ func NewConsumerEnv() *hbi.HostingEnv {
 	})
 
 	he.ExposeFunction("__hbi_cleanup__", func(err error) {
-		if err != nil {
+
+		chatter.line.Close()
+
+		if glog.V(1) {
 			glog.Infof("Connection to chatting service %s lost: %+v", serviceAddr, err)
-		} else if glog.V(1) {
-			glog.Infof("Disconnected from chatting service %s", serviceAddr)
 		}
+
 	})
 
 	return he
 }
 
 type Chatter struct {
+	sync.Mutex // embed a mutex
+
 	line *liner.State
 
 	po hbi.PostingEnd
@@ -98,6 +104,8 @@ GotoRoom(%#v)
 }
 
 func (chatter *Chatter) say(msg string) {
+
+	// record msg to send in local log
 	msgID := -1
 	// try find an empty slot to hold this pending message
 	for i := range chatter.sentMsgs {
@@ -108,8 +116,15 @@ func (chatter *Chatter) say(msg string) {
 	}
 	if msgID < 0 { // extend a new slot for this pending message
 		msgID = len(chatter.sentMsgs)
+		chatter.Lock()
 		chatter.sentMsgs = append(chatter.sentMsgs, msg)
+		chatter.Unlock()
+	} else {
+		chatter.Lock()
+		chatter.sentMsgs[msgID] = msg
+		chatter.Unlock()
 	}
+
 	// prepare binary data
 	msgBuf := []byte(msg)
 	// showcase notif with binary payload
@@ -122,7 +137,14 @@ Say(%d, %d)
 
 func (chatter *Chatter) keepChatting() {
 
-	defer fmt.Println("\nBye.")
+	defer func() {
+		if e := recover(); e != nil {
+			err := errors.RichError(e)
+			glog.Errorf("Unexpected error: %+v", err)
+		}
+
+		fmt.Println("\nBye.")
+	}()
 
 	for {
 		select {
@@ -138,7 +160,7 @@ func (chatter *Chatter) keepChatting() {
 			case liner.ErrPromptAborted: // Ctrl^C to giveup whatever input
 				continue
 			default:
-				panic(errors.RichError(err))
+				panic(err)
 			}
 			break
 		}
@@ -170,25 +192,41 @@ func (chatter *Chatter) updatePrompt() {
 }
 
 func (chatter *Chatter) NickAccepted(nick string) {
+	chatter.Lock()
+	defer chatter.Unlock()
+
 	chatter.nick = nick
 	chatter.updatePrompt()
 }
 
 func (chatter *Chatter) InRoom(roomID string) {
+	chatter.Lock()
+	defer chatter.Unlock()
+
 	chatter.inRoom = roomID
 	chatter.updatePrompt()
 }
 
 func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
-
+	chatter.line.HidePrompt()
+	if roomMsgs.RoomID != chatter.inRoom {
+		fmt.Printf(" *** Messages from #%s ***\n", roomMsgs.RoomID)
+	}
+	for i := range roomMsgs.Msgs {
+		fmt.Printf("%+v\n", &roomMsgs.Msgs[i])
+	}
+	chatter.line.ShowPrompt()
 }
 
 func (chatter *Chatter) Said(msgID int) {
+	chatter.Lock()
 	msg := chatter.sentMsgs[msgID]
-	chatter.line.HidePrompt()
-	fmt.Printf("@@ Your message [%d] has been displayed:\n  > %s", msgID, msg)
-	chatter.line.ShowPrompt()
 	chatter.sentMsgs[msgID] = ""
+	chatter.Unlock()
+
+	chatter.line.HidePrompt()
+	fmt.Printf("@@ Your message [%d] has been displayed:\n  > %s\n", msgID, msg)
+	chatter.line.ShowPrompt()
 }
 
 func (chatter *Chatter) ShowNotice(text string) {

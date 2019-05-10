@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/complyue/hbi"
 	"github.com/complyue/hbi/interop"
@@ -55,6 +56,8 @@ func NewServiceEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
+	sync.Mutex // embed a mutex
+
 	po hbi.PostingEnd
 	ho hbi.HostingEnd
 
@@ -70,6 +73,7 @@ func (chatter *Chatter) welcomeChatter() {
 			panic(err)
 		}
 		defer co.Close()
+
 		var welcomeText strings.Builder
 		welcomeText.WriteString(fmt.Sprintf(`
 @@ Welcome %s, this is chat service at %s !
@@ -89,25 +93,35 @@ ShowNotice(%#v)
 	}()
 
 	// send new comer info to other chatters already in room
-	for otherChatter := range chatter.inRoom.chatters {
-		otherChatter.po.Notif(fmt.Sprintf(`
-ChatterJoined(%#v, %#v)
-`, chatter.nick, chatter.inRoom.roomID))
-	}
+	func() {
+		// add this chatter into its 1st room
+		chatter.inRoom.Lock()
+		chatter.inRoom.chatters[chatter] = struct{}{}
+		chatter.inRoom.Unlock()
 
-	// add this chatter into its 1st room
-	chatter.inRoom.Lock()
-	chatter.inRoom.chatters[chatter] = struct{}{}
-	chatter.inRoom.Unlock()
+		for otherChatter := range chatter.inRoom.chatters {
+			if otherChatter == chatter {
+				continue // don't notify self
+			}
+			if err := otherChatter.po.Notif(fmt.Sprintf(`
+ChatterJoined(%#v, %#v)
+`, chatter.nick, chatter.inRoom.roomID)); err != nil {
+				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
+			}
+		}
+	}()
 }
 
 func (chatter *Chatter) SetNick(nick string) {
 	nick = strings.TrimSpace(nick)
 	if nick == "" {
-		chatter.nick = fmt.Sprintf("Stranger$%s", chatter.po.RemoteAddr())
-	} else {
-		chatter.nick = nick
+		nick = fmt.Sprintf("Stranger$%s", chatter.po.RemoteAddr())
 	}
+
+	chatter.Lock()
+	chatter.nick = nick
+	chatter.Unlock()
+
 	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
 NickAccepted(%#v)
 ShowNotice(%#v)
@@ -122,12 +136,15 @@ func (chatter *Chatter) GotoRoom(roomID string) {
 
 	func() { // leave old room
 		oldRoom.Lock()
-		defer oldRoom.Unlock()
 		delete(oldRoom.chatters, chatter)
+		oldRoom.Unlock()
+
 		for otherChatter := range oldRoom.chatters {
-			otherChatter.po.Notif(fmt.Sprintf(`
+			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterLeft(%#v, %#v)
-`, chatter.nick, oldRoom.roomID))
+`, chatter.nick, oldRoom.roomID)); err != nil {
+				glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
+			}
 		}
 	}()
 
@@ -136,15 +153,19 @@ ChatterLeft(%#v, %#v)
 			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
 `, chatter.nick, newRoom.roomID)); err != nil {
-				panic(err)
+				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
 			}
 		}
 
-		chatter.inRoom = newRoom
 		newRoom.Lock()
-		defer newRoom.Unlock()
 		newRoom.chatters[chatter] = struct{}{}
+		newRoom.Unlock()
 	}()
+
+	// change record state
+	chatter.Lock()
+	chatter.inRoom = newRoom
+	chatter.Unlock()
 
 	// send feedback
 	var welcomeText strings.Builder
@@ -174,7 +195,7 @@ func (chatter *Chatter) Say(msgID int, msgLen int) {
 
 	// use the input data
 	msg := string(msgBuf)
-	chatter.inRoom.Post(chatter.nick, msg)
+	chatter.inRoom.Post(chatter, msg)
 
 	// asynchronously feedback result of the method call
 	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`

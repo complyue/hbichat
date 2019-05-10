@@ -20,7 +20,7 @@ class Msg:
         self.content = str(content)
         if time_ is None:
             self.time_ = time.time()
-        elif isinstance(time_, float):
+        elif isinstance(time_, (int, float)):
             self.time_ = time_
         elif isinstance(time_, datetime):
             self.time_ = time_.timestamp()

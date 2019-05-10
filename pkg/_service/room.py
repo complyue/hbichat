@@ -26,7 +26,7 @@ class Room:
 
     def recent_msg_log(self):
         if self.cached_msg_log is None:
-            self.cached_msg_log = [*self.msgs]
+            self.cached_msg_log = MsgsInRoom(self.room_id, [*self.msgs])
         return self.cached_msg_log
 
     async def post_msg(self, from_chatter, content: str):
