@@ -50,9 +50,6 @@ RoomMsgs({room_msgs!r})
         loop = asyncio.get_running_loop()
         stale_chatters = set()
         for chatter in self.chatters:
-            if not chatter.po.is_connected():
-                stale_chatters.add(chatter)
-                continue
             if chatter is from_chatter:  # no need to notify the OP about content
                 continue
             try:

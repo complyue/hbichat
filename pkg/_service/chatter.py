@@ -31,8 +31,8 @@ class Chatter:
     
     """
 
-    # name of methods to be exposed for peer scripting
-    service_methods = ["SetNick", "GotoRoom", "Say"]
+    # name of artifacts to be exposed for peer scripting
+    names_to_expose = ["SetNick", "GotoRoom", "Say"]
 
     def __init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
         self.po = po

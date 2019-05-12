@@ -18,8 +18,8 @@ class Chatter:
     
     """
 
-    # name of methods to be exposed for peer scripting
-    consumer_methods = [
+    # name of artifacts to be exposed for peer scripting
+    names_to_expose = [
         "ShowNotice",
         "NickAccepted",
         "InRoom",
@@ -75,11 +75,13 @@ Say({msg_id!r}, {len(msg_buf)!r})
 
     async def keep_chatting(self):
 
-        while self.ho.is_connected():  # until disconnected from chat service
+        hbic = self.po.hbic
+        while hbic.is_connected():  # until disconnected from chat service
 
             sl = await self.line_getter.get_line()
             if sl is None:
                 # User pressed Ctrl^D to end chatting.
+                await hbic.disconnect()
                 break
 
             if len(sl.strip()) < 1:  # only white space(s) or just enter pressed
