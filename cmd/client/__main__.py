@@ -1,6 +1,8 @@
 import argparse
 import asyncio
+import os
 import runpy
+import signal
 import sys
 import threading
 
@@ -26,13 +28,9 @@ tui_liner = SyncVar()
 def create_he():  # Create a hosting env reacting to chat service
     he = HostingEnv()
 
-    chatter = None  # the main reactor object
-
     async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
         # sync variables to be set, they are read by main thread
         global tui_liner
-
-        nonlocal chatter
 
         # TUI loop of this line getter is to be run by main thread
         line_getter = GetLine(f">{po.remote_addr!s}> ")
@@ -47,17 +45,9 @@ def create_he():  # Create a hosting env reacting to chat service
         asyncio.create_task(chatter.keep_chatting())
 
     async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
-        # sync variables to be set, they are read by main thread
-        global tui_liner
-
-        nonlocal chatter
 
         if err_reason is not None:
-            logger.error(f"Connection to chatting service lost: {err_reason!s}")
-
-        # stop TUI loop in main thread
-        if tui_liner.is_set():
-            tui_liner.get().stop()
+            logger.error(f"Error with chatting service: {err_reason!s}")
 
     # expose standard named values for interop
     expose_interop_values(he)
@@ -112,8 +102,12 @@ if prog_args.port is not None:
 if not service_addr["host"]:
     service_addr["host"] = "127.0.0.1"
 
+line_getter = None
+
 
 async def do_chatting():
+    global line_getter
+
     try:
 
         # connect the service, get the posting & hosting endpoint
@@ -129,16 +123,14 @@ async def do_chatting():
         logger.debug("Done chatting.")
 
     except Exception:
-        import os, signal
-
         logger.fatal(f"Error in chatting.", exc_info=True)
 
-        # `threading.Event.wait` won't catch SystemExit so far.
-        # by sending self a SIGINT, we then make KeyboardInterrupt caught in
-        # `line_getter.read_loop()`
+    if line_getter is not None and line_getter.running:
+
+        # send a SIGINT to self, make sure a KeyboardInterrupt get caught in `line_getter.read_loop()`
         os.kill(os.getpid(), signal.SIGINT)
 
-        sys.exit(3)
+        line_getter.stop()
 
 
 # run coroutines in another dedicated thread, so as to spare main thread to run TUI loop
