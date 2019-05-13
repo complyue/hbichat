@@ -17,6 +17,61 @@ if not sys.stdout.isatty():
     logger.fatal("Can only run with a terminal!")
     sys.exit(1)
 
+# the line getter for simple terminal UI.
+# it'll be set by a coroutine upon HBI connection made to chat service,
+# the main thread waits until it's set, then runs its UI loop.
+tui_liner = SyncVar()
+
+
+def create_he():  # Create a hosting env reacting to chat service
+    he = HostingEnv()
+
+    chatter = None  # the main reactor object
+
+    async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
+        # sync variables to be set, they are read by main thread
+        global tui_liner
+
+        nonlocal chatter
+
+        # TUI loop of this line getter is to be run by main thread
+        line_getter = GetLine(f">{po.remote_addr!s}> ")
+
+        # create a chatter consumer instance and expose as reactor
+        chatter = Chatter(line_getter, po, ho)
+        he.expose_reactor(chatter)
+
+        # assign the sync variable to tell main thread to start TUI loop
+        tui_liner.set(line_getter)
+
+        asyncio.create_task(chatter.keep_chatting())
+
+    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
+        # sync variables to be set, they are read by main thread
+        global tui_liner
+
+        nonlocal chatter
+
+        if err_reason is not None:
+            logger.error(f"Connection to chatting service lost: {err_reason!s}")
+
+        # stop TUI loop in main thread
+        if tui_liner.is_set():
+            tui_liner.get().stop()
+
+    # expose standard named values for interop
+    expose_interop_values(he)
+
+    # expose all shared type of data structures
+    expose_shared_data_structures(he)
+
+    # expose magic functions
+    he.expose_function(None, __hbi_init__)
+    he.expose_function(None, __hbi_cleanup__)
+
+    return he
+
+
 # take arguments from command line
 cmdl_parser = argparse.ArgumentParser(
     prog="python -m hbichat.cmd.client",
@@ -56,59 +111,6 @@ if prog_args.port is not None:
     service_addr["port"] = prog_args.port[0]
 if not service_addr["host"]:
     service_addr["host"] = "127.0.0.1"
-
-tui_liner = SyncVar()
-
-
-def create_he():
-    # Create a hosting env reacting to chat service
-    he = HostingEnv()
-
-    chatter = None
-
-    async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
-        # sync variables to be set, they are read by main thread
-        global tui_liner
-
-        nonlocal chatter
-
-        # TUI loop of this line getter is to be run by main thread
-        line_getter = GetLine(f">{po.remote_addr!s}> ")
-
-        # create a chatter consumer instance and expose as reactor
-        chatter = Chatter(line_getter, po, ho)
-        he.expose_reactor(chatter)
-
-        # assign the sync variable to tell main thread to start TUI loop
-        tui_liner.set(line_getter)
-
-        asyncio.create_task(chatter.keep_chatting())
-
-    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
-        # sync variables to be set, they are read by main thread
-        global tui_liner
-
-        nonlocal chatter
-
-        if err_reason is not None:
-            logger.error(f"Connection to chatting service lost: {err_reason!s}")
-
-        # stop TUI loop in main thread
-        if tui_liner.is_set():
-            tui_liner.get().stop()
-
-    # expose standard named values for interop
-    expose_interop_values(he)
-
-    # expose all shared type of data structures
-    he.expose_ctor(MsgsInRoom)
-    he.expose_ctor(Msg)
-
-    # expose magic functions
-    he.expose_function(None, __hbi_init__)
-    he.expose_function(None, __hbi_cleanup__)
-
-    return he
 
 
 async def do_chatting():

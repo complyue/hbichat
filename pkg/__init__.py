@@ -9,7 +9,7 @@ __all__ = [
     'Chatter',
 
     # exports from .ds
-    'MsgsInRoom', 'Msg',
+    'expose_shared_data_structures', 'MsgsInRoom', 'Msg',
 
     # exports from .getline
     'GetLine',

@@ -11,11 +11,10 @@ from ...pkg.log import *
 logger = get_logger(__package__)
 
 
-def he_factory():
-    # Create a hosting env reacting to chat consumers
+def he_factory():  # Create a hosting env reacting to chat consumers
     he = HostingEnv()
 
-    chatter = None
+    chatter = None  # the main reactor object
 
     async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
         nonlocal chatter
@@ -43,8 +42,7 @@ def he_factory():
     expose_interop_values(he)
 
     # expose all shared type of data structures
-    he.expose_ctor(MsgsInRoom)
-    he.expose_ctor(Msg)
+    expose_shared_data_structures(he)
 
     # expose magic functions
     he.expose_function(None, __hbi_init__)
