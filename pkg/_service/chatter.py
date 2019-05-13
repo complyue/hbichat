@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import math
 import os.path
 import time
@@ -36,7 +37,14 @@ class Chatter:
     """
 
     # name of artifacts to be exposed for peer scripting
-    names_to_expose = ["SetNick", "GotoRoom", "Say", "RecvFile"]
+    names_to_expose = [
+        "SetNick",
+        "GotoRoom",
+        "Say",
+        "RecvFile",
+        "ListFiles",
+        "SendFile",
+    ]
 
     def __init__(self, po: PostingEnd, ho: HostingEnd):
         self.po = po
@@ -230,3 +238,71 @@ Said({msg_id!r})
  @*@ I just uploaded a file {chksum:8x} {int(math.ceil(fsz / 1024))} KB [{fn}]
 """,
         )
+
+    async def ListFiles(self, room_id: str):
+        room_dir = os.path.abspath(f"room-files/{room_id}")
+        if not os.path.isdir(room_dir):
+            logger.info(f"Making room dir [{room_dir}] ...")
+            os.makedirs(room_dir, exist_ok=True)
+
+        fil = []
+        for fn in os.listdir(room_dir):
+            if fn[0] in ".~!?*":
+                continue  # ignore strange file names
+            try:
+                s = os.stat(os.path.join(room_dir, fn))
+            except OSError:
+                pass
+            fil.append((s.st_size, fn))
+
+        # send back repr for peer to land & receive as obj
+        await self.ho.co.send_obj(repr(fil))
+
+    async def SendFile(self, room_id: str, fn: str):
+        co = self.ho.co
+
+        fpth = os.path.abspath(os.path.join("room-files", room_id, fn))
+        if not os.path.exists(fpth) or not os.path.isfile(fpth):
+            # send negative file size, meaning download refused
+            await co.send_obj(repr([-1, f"no such file"]))
+            return
+
+        s = os.stat(fpth)
+
+        with open(fpth, "rb") as f:
+            # get file data size
+            f.seek(0, 2)
+            fsz = f.tell()
+
+            # send [file-size, msg] to peer, telling it the data size to receive
+            msg = "last modified: " + datetime.fromtimestamp(s.st_mtime).strftime(
+                "%F %T"
+            )
+            await co.send_obj(repr([fsz, msg]))
+
+            # prepare to send file data from beginning, calculate checksum by the way
+            f.seek(0, 0)
+            chksum = 0
+
+            def stream_file_data():  # a generator function is ideal for binary data streaming
+                nonlocal chksum  # this is needed outer side, write to that var
+
+                # nothing prevents the file from growing as we're sending, we only send
+                # as much as glanced above, so count remaining bytes down,
+                # send one 1-KB-chunk at max at a time.
+                bytes_remain = fsz
+                while bytes_remain > 0:
+                    chunk = f.read(min(1024, bytes_remain))
+                    assert len(chunk) > 0, "file shrunk !?!"
+                    bytes_remain -= len(chunk)
+
+                    yield chunk  # yield it so as to be streamed to client
+                    chksum = crc32(chunk, chksum)  # update chksum
+
+                assert bytes_remain == 0, "?!"
+
+            # upload accepted, proceed to upload file data
+            await co.send_data(stream_file_data())
+
+        # send chksum at last
+        await co.send_obj(repr(chksum))

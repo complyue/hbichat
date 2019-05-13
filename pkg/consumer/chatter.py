@@ -62,7 +62,7 @@ SetNick({nick!r})
         # a closed conversation can do NO sending anymore,
         # but the receiving of response is very much prefered to be
         # carried out after it's closed.
-        # this is essential for overall throughput with the underlying HBI wire.
+        # this is crucial for overall throughput with the underlying HBI wire.
         accepted_nick = await co.recv_obj()
 
         # the accepted nick may be moderated, not necessarily the same as requested
@@ -108,6 +108,8 @@ Say({msg_id!r}, {len(msg_buf)!r})
 
         fnl = []
         for fn in os.listdir(room_dir):
+            if fn[0] in ".~!?*":
+                continue # ignore strange file names
             try:
                 s = os.stat(os.path.join(room_dir, fn))
             except OSError:
@@ -213,6 +215,118 @@ RecvFile({self.in_room!r}, {fn!r}, {fsz!r})
             lg.show(
                 rf"""
 @@ uploaded {chksum:x} [{fn}]
+"""
+            )
+
+    async def _list_server_files(self):
+
+        async with self.po.co() as co:  # start a posting conversation
+
+            # send the file listing request
+            await co.send_code(
+                rf"""
+ListFiles({self.in_room!r})
+"""
+            )
+
+            # close this posting conversation after all requests sent,
+            # so the wire is released immediately,
+            # for other posting conversaions to start sending,
+            # without waiting roundtrip of this conversation's response.
+
+        # a closed conversation can do NO sending anymore,
+        # but the receiving of response is very much prefered to be
+        # carried out after it's closed.
+        # this is crucial for overall throughput with the underlying HBI wire.
+        fil = await co.recv_obj()
+
+        # show received file info list
+        self.line_getter.show(
+            "\n".join(f"{int(math.ceil(fsz / 1024)):12d} KB\t{fn}" for fsz, fn in fil)
+        )
+
+    async def _download_file(self, fn):
+        lg = self.line_getter
+
+        room_dir = os.path.abspath(f"room-files/{self.in_room}")
+        if not os.path.isdir(room_dir):
+            self.line_getter.show(f"Making room dir [{room_dir}] ...")
+            os.makedirs(room_dir, exist_ok=True)
+
+        async with self.po.co() as co:  # start a posting conversation
+
+            await co.send_code(
+                rf"""
+SendFile({self.in_room!r}, {fn!r})
+"""
+            )
+
+        # receive response AFTER the posting conversation closed,
+        # this is crucial for overall throughput.
+        fsz, msg = await co.recv_obj()
+        if fsz < 0:
+            lg.show(f"Server refused file downlaod: {msg}")
+            return
+        elif msg is not None:
+            lg.show(f"@@ Server: {msg}")
+
+        fpth = os.path.join(room_dir, fn)
+
+        start_time = time.monotonic()
+        with open(fpth, "wb") as f:
+            total_kb = int(math.ceil(fsz / 1024))
+            lg.show(f" Start downloading {total_kb} KB data ...")
+
+            # prepare to recv file data from beginning, calculate checksum by the way
+            chksum = 0
+
+            def stream_file_data():  # a generator function is ideal for binary data streaming
+                nonlocal chksum  # this is needed outer side, write to that var
+
+                # receive 1 KB at most at a time
+                buf = bytearray(1024)
+
+                bytes_remain = fsz
+                while bytes_remain > 0:
+
+                    if len(buf) > bytes_remain:
+                        buf = buf[:bytes_remain]
+
+                    yield buf  # yield it so as to be streamed from client
+
+                    f.write(buf)  # write received data to file
+
+                    bytes_remain -= len(buf)
+
+                    chksum = crc32(buf, chksum)  # update chksum
+
+                    remain_kb = int(math.ceil(bytes_remain / 1024))
+                    lg.show(  # overwrite line above prompt
+                        f"\x1B[1A\r\x1B[0K {remain_kb:12d} of {total_kb:12d} KB remaining ..."
+                    )
+
+                assert bytes_remain == 0, "?!"
+
+                # overwrite line above prompt
+                lg.show(f"\x1B[1A\r\x1B[0K All {total_kb} KB received.")
+
+            # receive data stream from server
+            await co.recv_data(stream_file_data())
+
+        peer_chksum = await co.recv_obj()
+        elapsed_seconds = time.monotonic() - start_time
+
+        # overwrite line above
+        lg.show(
+            f"\x1B[1A\r\x1B[0K All {total_kb} KB downloaded in {elapsed_seconds:0.2f} second(s)."
+        )
+        # validate chksum calculated at peer side as it had all data sent
+        if peer_chksum != chksum:
+            lg.show(f"But checksum mismatch !?!")
+        else:
+            lg.show(
+                rf"""
+@@ downloaded {chksum:x} [{fn}]
 """
             )
 
