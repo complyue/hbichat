@@ -58,7 +58,7 @@ class Chatter:
             welcome_text = "\n".join(str(line) for line in welcome_lines)
             await co.send_code(
                 f"""
-NickAccepted({self.nick!r})
+NickChanged({self.nick!r})
 InRoom({self.in_room.room_id!r})
 ShowNotice({welcome_text!r})
 """
@@ -76,13 +76,11 @@ ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
         self.in_room.chatters.add(self)
 
     async def SetNick(self, nick: str):
+        # TODO the nick should be more carefully moderated here
         self.nick = str(nick).strip() or f"Anonymous@{self.po.remote_addr!s}"
-        await self.ho.co.send_code(
-            rf"""
-NickAccepted({self.nick!r})
-ShowNotice({"You are now known as `"+self.nick+"`"!r})
-"""
-        )
+
+        # peer expects the moderated new nick be sent back within the conversation
+        await self.ho.co.send_obj(repr(self.nick))
 
     async def GotoRoom(self, room_id):
         old_room = self.in_room

@@ -21,7 +21,7 @@ class Chatter:
     # name of artifacts to be exposed for peer scripting
     names_to_expose = [
         "ShowNotice",
-        "NickAccepted",
+        "NickChanged",
         "InRoom",
         "RoomMsgs",
         "Said",
@@ -39,11 +39,33 @@ class Chatter:
         self.sent_msgs = []
 
     async def _set_nick(self, nick: str):
-        await self.po.notif(
-            rf"""
+
+        async with self.po.co() as co:  # start a posting conversation
+
+            # send the nick change request
+            await co.send_code(
+                rf"""
 SetNick({nick!r})
 """
-        )
+            )
+
+            # close this posting conversation after all requests sent,
+            # so the wire is released immediately,
+            # for other posting conversaions to start sending,
+            # without waiting roundtrip of this conversation's response.
+
+        # a closed conversation can do NO sending anymore,
+        # but the receiving of response is very much prefered to be
+        # carried out after it's closed.
+        # this is essential for overall throughput with the underlying HBI wire.
+        accepted_nick = await co.recv_obj()
+
+        # the accepted nick may be moderated, not necessarily the same as requested
+
+        # update local state and TUI, notice the new nick
+        self.nick = accepted_nick
+        self._update_prompt()
+        self.line_getter.show(f"You are now known as `{self.nick}`")
 
     async def _goto_room(self, room_id: str):
         await self.po.notif(
@@ -104,7 +126,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
     def _update_prompt(self):
         self.line_getter.ps1 = f"{self.nick!s}@{self.po.remote_addr!s}#{self.in_room}: "
 
-    def NickAccepted(self, nick: str):
+    def NickChanged(self, nick: str):
         self.nick = nick
         self._update_prompt()
 
