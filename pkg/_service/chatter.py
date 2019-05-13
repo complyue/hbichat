@@ -1,8 +1,11 @@
 import asyncio
+import os.path
 import time
+import traceback
 from collections import deque
+from zlib import crc32
 
-import hbi
+from hbi import *
 
 from ..ds import *
 from ..log import *
@@ -32,9 +35,9 @@ class Chatter:
     """
 
     # name of artifacts to be exposed for peer scripting
-    names_to_expose = ["SetNick", "GotoRoom", "Say"]
+    names_to_expose = ["SetNick", "GotoRoom", "Say", "RecvFile"]
 
-    def __init__(self, po: hbi.PostingEnd, ho: hbi.HostingEnd):
+    def __init__(self, po: PostingEnd, ho: HostingEnd):
         self.po = po
         self.ho = ho
 
@@ -142,3 +145,79 @@ RoomMsgs({room_msgs!r})
 Said({msg_id!r})
 """
         )
+
+    async def RecvFile(self, room_id: str, fn: str, fsz: int):
+        co: HoCo = self.ho.co
+
+        # the implemented solution here is very anti-throughput,
+        # the wire is hogged by this conversation for a full network roundtrip,
+        # the pipeline will be drained due to blocking wait.
+        #
+        # but for demonstration purpose, this solution can get the job done at least.
+        #
+        # a better solution, that's throughput-wise, should be the client submiting an upload
+        # intent, and if the service accepts the meta info, it then opens a posting conversation
+        # from server side, requests the hosting endpoint of the client to do upload; or in
+        # the other case, notify the reason why it's not accepted.
+
+        if fsz > 200 * 1024 * 1024:  # 200 MB at most
+            # send the reason as string, why it's refused
+            await co.send_obj(repr(f"file too large!"))
+            return
+
+        if fsz < 20 * 1024:  # 20 KB at least
+            # send the reason as string, why it's refused
+            await co.send_obj(repr(f"file too small!"))
+            return
+        room_dir = os.path.abspath(f"room-files/{room_id}")
+        os.makedirs(room_dir, exist_ok=True)
+
+        fpth = os.path.join(room_dir, fn)
+        try:
+            f = open(fpth, "wb")
+        except OSError:
+            # failed open file for writing
+            refuse_reason = traceback.print_exc()
+            await co.send_obj(repr(refuse_reason))
+            return
+
+        # prepare to recv file data from beginning, calculate chksum by the way
+        chksum = 0
+
+        try:
+
+            # None as refuse_reason means the upload is accepted
+            await co.send_obj(None)
+
+            def stream_file_data():  # a generator function is ideal for binary data streaming
+                nonlocal chksum  # this is needed outer side, write to that var
+
+                # receive 1 KB at most at a time
+                buf = bytearray(1024)
+
+                bytes_remain = fsz
+                while bytes_remain > 0:
+
+                    if len(buf) > bytes_remain:
+                        buf = buf[:bytes_remain]
+
+                    yield buf  # yield it so as to be streamed from client
+
+                    f.write(buf)  # write received data to file
+
+                    bytes_remain -= len(buf)
+
+                    chksum = crc32(buf, chksum)  # update chksum
+
+                    # time.sleep(0.01)  # simulate slow uploading
+
+                assert bytes_remain == 0, "?!"
+
+            # receive data stream from client
+            await co.recv_data(stream_file_data())
+
+        finally:
+            f.close()
+
+        # send back chksum for client to verify
+        await co.send_obj(repr(chksum))
