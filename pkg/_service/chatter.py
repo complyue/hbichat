@@ -1,4 +1,5 @@
 import asyncio
+import math
 import os.path
 import time
 import traceback
@@ -221,3 +222,11 @@ Said({msg_id!r})
 
         # send back chksum for client to verify
         await co.send_obj(repr(chksum))
+
+        # announce this new upload
+        await self.in_room.post_msg(
+            self,
+            rf"""
+ @*@ I just uploaded a file {chksum:8x} {int(math.ceil(fsz / 1024))} KB [{fn}]
+""",
+        )

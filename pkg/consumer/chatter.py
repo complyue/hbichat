@@ -139,7 +139,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
             f.seek(0, 2)
             fsz = f.tell()
             total_kb = int(math.ceil(fsz / 1024))
-            lg.show(f" Start uploading {fsz} KB data ...")
+            lg.show(f" Start uploading {total_kb} KB data ...")
 
             # prepare to send file data from beginning, calculate checksum by the way
             f.seek(0, 0)
@@ -209,6 +209,12 @@ RecvFile({self.in_room!r}, {fn!r}, {fsz!r})
         # validate chksum calculated at peer side as it had all data received
         if peer_chksum != chksum:
             lg.show(f"But checksum mismatch !?!")
+        else:
+            lg.show(
+                rf"""
+@@ uploaded {chksum:x} [{fn}]
+"""
+            )
 
     async def keep_chatting(self):
 
