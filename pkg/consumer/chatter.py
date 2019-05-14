@@ -109,7 +109,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
         fnl = []
         for fn in os.listdir(room_dir):
             if fn[0] in ".~!?*":
-                continue # ignore strange file names
+                continue  # ignore strange file names
             try:
                 s = os.stat(os.path.join(room_dir, fn))
             except OSError:
@@ -331,11 +331,11 @@ SendFile({self.in_room!r}, {fn!r})
             )
 
     async def keep_chatting(self):
+        po = self.po
 
-        hbic = self.po.hbic
         disc_reason = None
         try:
-            while hbic.is_connected():  # until disconnected from chat service
+            while po.is_connected():  # until disconnected from chat service
 
                 sl = await self.line_getter.get_line()
                 if sl is None:
@@ -400,8 +400,8 @@ Usage:
             logger.error(f"Failure in chatting.", exc_info=True)
             disc_reason = traceback.print_exc()
 
-        if hbic.is_connected():
-            await hbic.disconnect(disc_reason)
+        if po.is_connected():
+            await po.disconnect(disc_reason)
 
         print("Bye.")
 

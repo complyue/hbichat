@@ -118,7 +118,7 @@ async def do_chatting():
             create_he(),
         )
 
-        await ho.hbic.wait_disconnected()
+        await ho.wait_disconnected()
 
         logger.debug("Done chatting.")
 
