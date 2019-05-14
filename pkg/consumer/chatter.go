@@ -173,6 +173,39 @@ func (chatter *Chatter) keepChatting() {
 			// change nick
 			nick := strings.TrimSpace(code[1:])
 			chatter.setNick(nick)
+		} else if code[0] == '.' {
+			// list local files
+		} else if code[0] == '^' {
+			// list server files
+		} else if code[0] == '>' {
+			// upload file
+		} else if code[0] == '<' {
+			// download file
+		} else if code[0] == '?' {
+			// show usage
+			line.HidePrompt()
+			fmt.Println(`
+Usage:
+
+ # _room_
+    goto a room
+
+ $ _nick_
+    change nick
+
+ . 
+    list local files
+
+ ^ 
+    list server files
+
+ > _file-name_
+    upload a file
+
+ < _file-name_
+    download a file
+`)
+			line.ShowPrompt()
 		} else {
 			msg := code
 			chatter.say(msg)

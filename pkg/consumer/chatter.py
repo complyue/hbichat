@@ -373,22 +373,22 @@ SendFile({self.in_room!r}, {fn!r})
                         rf"""
 Usage:
 
-  * #`room`
+ # _room_
     goto a room
 
-  * $`nick`
+ $ _nick_
     change nick
 
-  * .
+ . 
     list local files
 
-  * ^
+ ^ 
     list server files
 
-  * >`file-name`
+ > _file-name_
     upload a file
 
-  * <`file-name`
+ < _file-name_
     download a file
 """
                     )
