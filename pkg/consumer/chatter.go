@@ -42,7 +42,7 @@ func NewConsumerEnv() *hbi.HostingEnv {
 		chatter     *Chatter
 	)
 
-	he.ExposeFunction("__hbi_init__", func(po hbi.PostingEnd, ho hbi.HostingEnd) {
+	he.ExposeFunction("__hbi_init__", func(po *hbi.PostingEnd, ho *hbi.HostingEnd) {
 		serviceAddr = fmt.Sprintf("%s", po.RemoteAddr())
 
 		chatter = &Chatter{
@@ -67,10 +67,10 @@ func NewConsumerEnv() *hbi.HostingEnv {
 		}()
 	})
 
-	he.ExposeFunction("__hbi_cleanup__", func(err error) {
+	he.ExposeFunction("__hbi_cleanup__", func(discReason string) {
 
 		if glog.V(1) {
-			glog.Infof("Connection to chatting service %s lost: %+v", serviceAddr, err)
+			glog.Infof("Connection to chatting service %s lost: %s", serviceAddr, discReason)
 		}
 
 	})
@@ -79,8 +79,8 @@ func NewConsumerEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
-	po hbi.PostingEnd
-	ho hbi.HostingEnd
+	po *hbi.PostingEnd
+	ho *hbi.HostingEnd
 
 	nick     string
 	inRoom   string

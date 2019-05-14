@@ -40,7 +40,7 @@ func main() {
 		}
 	}()
 
-	hbi.ServeTCP(service.NewServiceEnv, servAddr, func(listener *net.TCPListener) {
+	hbi.ServeTCP(servAddr, service.NewServiceEnv, func(listener *net.TCPListener) {
 		glog.Infof("HBI chat service listening: %s", listener.Addr())
 	})
 

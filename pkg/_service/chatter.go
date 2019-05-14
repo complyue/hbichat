@@ -26,7 +26,7 @@ func NewServiceEnv() *hbi.HostingEnv {
 		chatter      *Chatter
 	)
 
-	he.ExposeFunction("__hbi_init__", func(po hbi.PostingEnd, ho hbi.HostingEnd) {
+	he.ExposeFunction("__hbi_init__", func(po *hbi.PostingEnd, ho *hbi.HostingEnd) {
 		consumerAddr = fmt.Sprintf("%s", po.RemoteAddr())
 
 		chatter = &Chatter{
@@ -41,9 +41,9 @@ func NewServiceEnv() *hbi.HostingEnv {
 		chatter.welcomeChatter()
 	})
 
-	he.ExposeFunction("__hbi_cleanup__", func(err error) {
-		if err != nil {
-			glog.Infof("Connection to chatting consumer %s lost: %+v", consumerAddr, err)
+	he.ExposeFunction("__hbi_cleanup__", func(discReason string) {
+		if len(discReason) > 0 {
+			glog.Infof("Connection to chatting consumer %s lost: %s", consumerAddr, discReason)
 		} else if glog.V(1) {
 			glog.Infof("Chatting consumer %s disconnected.", consumerAddr)
 		}
@@ -56,8 +56,8 @@ func NewServiceEnv() *hbi.HostingEnv {
 }
 
 type Chatter struct {
-	po hbi.PostingEnd
-	ho hbi.HostingEnd
+	po *hbi.PostingEnd
+	ho *hbi.HostingEnd
 
 	inRoom *Room
 	nick   string
@@ -68,7 +68,7 @@ type Chatter struct {
 func (chatter *Chatter) welcomeChatter() {
 
 	func() { // send welcome notice to new comer
-		co, err := chatter.po.Co()
+		co, err := chatter.po.NewCo()
 		if err != nil {
 			panic(err)
 		}

@@ -44,7 +44,7 @@ func main() {
 
 	}()
 
-	po, ho, err := hbi.DialTCP(consumer.NewConsumerEnv(), servAddr)
+	po, ho, err := hbi.DialTCP(servAddr, consumer.NewConsumerEnv())
 
 	if err != nil {
 		panic(err)
