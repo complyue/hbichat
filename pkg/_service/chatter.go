@@ -49,7 +49,9 @@ func NewServiceEnv() *hbi.HostingEnv {
 		}
 
 		// remove chatter from its last room
+		chatter.inRoom.Lock()
 		delete(chatter.inRoom.chatters, chatter)
+		chatter.inRoom.Unlock()
 	})
 
 	return he
@@ -84,7 +86,7 @@ func (chatter *Chatter) welcomeChatter() {
 			welcomeText.WriteString(fmt.Sprintf("  -*-\t%d chatter(s) in room #%s\n", len(room.chatters), roomID))
 		}
 		if err = co.SendCode(fmt.Sprintf(`
-NickAccepted(%#v)
+NickChanged(%#v)
 InRoom(%#v)
 ShowNotice(%#v)
 `, chatter.nick, chatter.inRoom.roomID, welcomeText.String())); err != nil {
@@ -113,19 +115,17 @@ ChatterJoined(%#v, %#v)
 }
 
 func (chatter *Chatter) SetNick(nick string) {
+	// note: the nick can be moderated here
 	nick = strings.TrimSpace(nick)
 	if nick == "" {
 		nick = fmt.Sprintf("Stranger$%s", chatter.po.RemoteAddr())
 	}
-
 	chatter.mu.Lock()
 	chatter.nick = nick
 	chatter.mu.Unlock()
 
-	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
-NickAccepted(%#v)
-ShowNotice(%#v)
-`, chatter.nick, fmt.Sprintf("You are now known as `%s`", chatter.nick))); err != nil {
+	// peer expects the moderated new nick be sent back within the conversation
+	if err := chatter.ho.Co().SendObj(fmt.Sprintf("%#v", chatter.nick)); err != nil {
 		panic(err)
 	}
 }
@@ -197,7 +197,7 @@ func (chatter *Chatter) Say(msgID int, msgLen int) {
 	msg := string(msgBuf)
 	chatter.inRoom.Post(chatter, msg)
 
-	// asynchronously feedback result of the method call
+	// back-script the consumer to notify it about the success-of-display of the message
 	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
 Said(%d)
 `, msgID)); err != nil {

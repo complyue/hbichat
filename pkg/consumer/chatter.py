@@ -45,24 +45,35 @@ class Chatter:
 
     async def _set_nick(self, nick: str):
 
-        async with self.po.co() as co:  # start a posting conversation
+        # showcase the classic request/response pattern of service invocation over HBI wire.
 
-            # send the nick change request
+        # start a new posting conversation
+        async with self.po.co() as co:  # this async context manager scope programs the
+            # `posting stage` of co - a `posting conversation`
+
+            # during the posting stage, send out the nick change request:
             await co.send_code(
                 rf"""
 SetNick({nick!r})
 """
             )
 
-            # close this posting conversation after all requests sent,
-            # so the wire is released immediately,
-            # for other posting conversaions to start sending,
-            # without waiting roundtrip of this conversation's response.
+            # close the posting conversation as soon as all requests are sent,
+            # so the wire is released immediately, for rest posting conversaions to start off,
+            # with RTT between requests eliminated.
 
-        # a closed conversation can do NO sending anymore,
-        # but the receiving of response is very much prefered to be
-        # carried out after it's closed.
-        # this is crucial for overall throughput with the underlying HBI wire.
+        # once closed, this posting conversation enters `after-posting stage`,
+        # a closed po co can do NO sending anymore, but the receiving of response, as in the
+        # classic pattern, needs to be received and processed.
+
+        # execution of current coroutine is actually suspended during `co.recv_obj()`, until
+        # the inbound payload matching `co.co_seq` appears on the wire, at which time that
+        # payload will be `landed` and the land result will be returned by `co.recv_obj()`.
+        # before that, the wire should be busy off loading inbound data corresponding to
+        # previous conversations, either posting ones initiated by local peer, or hosting
+        # ones triggered by remote peer.
+
+        # receive response within `after-posting stage`:
         accepted_nick = await co.recv_obj()
 
         # the accepted nick may be moderated, not necessarily the same as requested
@@ -73,6 +84,15 @@ SetNick({nick!r})
         self.line_getter.show(f"You are now known as `{self.nick}`")
 
     async def _goto_room(self, room_id: str):
+
+        # showcase the idiomatic HBI way of (asynchronous) service call.
+        # as the service is invoked, it's at its own discrepancy to back-script this consumer,
+        # to change its representatiion states as consequences of the service call. actually
+        # that's not only the requesting consumer, but all consumer instances connected to the
+        # service, are scripted in realtime response to this particular service call, in largely
+        # the same way (asynchronous server-pushing), of state transition to realize the overall
+        # system consequences.
+
         await self.po.notif(
             rf"""
 GotoRoom({room_id!r})
@@ -80,6 +100,13 @@ GotoRoom({room_id!r})
         )
 
     async def _say(self, msg: str):
+
+        # showcase the idiomatic HBI way of (asynchronous) service call, with binary data
+        # data following its `receiving-code`, together posted to the service for landing.
+        # the service is expected to notify the success-of-display of the message, by
+        # back-scripting this consumer to land `Said(msg_id)` during the `after-posting stage`
+        # of the implicitly started posting conversation from `po.notif_data()`.
+
         # record msg to send in local log
         try:
             # try find an empty slot to hold this pending message
@@ -92,7 +119,7 @@ GotoRoom({room_id!r})
 
         # prepare binary data
         msg_buf = msg.encode("utf-8")
-        # showcase notif with binary payload
+        # notif with binary data
         await self.po.notif_data(
             rf"""
 Say({msg_id!r}, {len(msg_buf)!r})
@@ -101,7 +128,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
         )
 
     async def _list_local_files(self):
-        room_dir = os.path.abspath(f"room-files/{self.in_room}")
+        room_dir = os.path.abspath(f"chat-client-files/{self.in_room}")
         if not os.path.isdir(room_dir):
             self.line_getter.show(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)
@@ -122,7 +149,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
     async def _upload_file(self, fn):
         lg = self.line_getter
 
-        room_dir = os.path.abspath(f"room-files/{self.in_room}")
+        room_dir = os.path.abspath(f"chat-client-files/{self.in_room}")
         if not os.path.isdir(room_dir):
             lg.show(f"Room dir not there: [{room_dir}]")
             return
@@ -248,7 +275,7 @@ ListFiles({self.in_room!r})
     async def _download_file(self, fn):
         lg = self.line_getter
 
-        room_dir = os.path.abspath(f"room-files/{self.in_room}")
+        room_dir = os.path.abspath(f"chat-client-files/{self.in_room}")
         if not os.path.isdir(room_dir):
             self.line_getter.show(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)

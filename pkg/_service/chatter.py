@@ -88,7 +88,7 @@ ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
         self.in_room.chatters.add(self)
 
     async def SetNick(self, nick: str):
-        # TODO the nick should be more carefully moderated here
+        # note: the nick can be moderated here
         self.nick = str(nick).strip() or f"Anonymous@{self.po.remote_addr!s}"
 
         # peer expects the moderated new nick be sent back within the conversation
@@ -148,7 +148,7 @@ RoomMsgs({room_msgs!r})
         # use the input data
         await self.in_room.post_msg(self, msg)
 
-        # asynchronously feedback result of the method call
+        # back-script the consumer to notify it about the success-of-display of the message
         await self.ho.co.send_code(
             f"""
 Said({msg_id!r})
@@ -178,7 +178,7 @@ Said({msg_id!r})
             # send the reason as string, why it's refused
             await co.send_obj(repr(f"file too small!"))
             return
-        room_dir = os.path.abspath(f"room-files/{room_id}")
+        room_dir = os.path.abspath(f"chat-server-files/{room_id}")
         os.makedirs(room_dir, exist_ok=True)
 
         fpth = os.path.join(room_dir, fn)
@@ -240,7 +240,7 @@ Said({msg_id!r})
         )
 
     async def ListFiles(self, room_id: str):
-        room_dir = os.path.abspath(f"room-files/{room_id}")
+        room_dir = os.path.abspath(f"chat-server-files/{room_id}")
         if not os.path.isdir(room_dir):
             logger.info(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)
@@ -261,7 +261,7 @@ Said({msg_id!r})
     async def SendFile(self, room_id: str, fn: str):
         co = self.ho.co
 
-        fpth = os.path.abspath(os.path.join("room-files", room_id, fn))
+        fpth = os.path.abspath(os.path.join("chat-server-files", room_id, fn))
         if not os.path.exists(fpth) or not os.path.isfile(fpth):
             # send negative file size, meaning download refused
             await co.send_obj(repr([-1, f"no such file"]))

@@ -92,14 +92,69 @@ type Chatter struct {
 }
 
 func (chatter *Chatter) setNick(nick string) {
-	if err := chatter.po.Notif(fmt.Sprintf(`
-SetNick(%#v)
-`, nick)); err != nil {
+
+	// showcase the classic request/response pattern of service invocation over HBI wire.
+
+	// start a new posting conversation
+	co, err := chatter.po.NewCo()
+	if err != nil {
 		panic(err)
 	}
+	func() { // this one-off, immediately-called, anonymous function, programs the
+		// `posting stage` of co - a `posting conversation`
+
+		defer co.Close() // close this po co for sure, on leaving this one-off func
+
+		// during the posting stage, send out the nick change request:
+		if err = co.SendCode(
+			fmt.Sprintf(`
+SetNick(%#v)
+`, nick)); err != nil {
+			panic(err)
+		}
+
+		// close the posting conversation as soon as all requests are sent,
+		// so the wire is released immediately, for rest posting conversaions to start off,
+		// with RTT between requests eliminated.
+	}()
+
+	// once closed, this posting conversation enters `after-posting stage`,
+	// a closed po co can do NO sending anymore, but the receiving of response, as in the
+	// classic pattern, needs to be received and processed.
+
+	// execution of current goroutine is actually suspended during `co.RecvObj()`, until
+	// the inbound payload matching `co.CoSeq()` appears on the wire, at which time that
+	// payload will be `landed` and the land result will be returned by `co.RecvObj()`.
+	// before that, the wire should be busy off loading inbound data corresponding to
+	// previous conversations, either posting ones initiated by local peer, or hosting
+	// ones triggered by remote peer.
+
+	// receive response within `after-posting stage`:
+	acceptedNick, err := co.RecvObj()
+	if err != nil {
+		panic(err)
+	}
+
+	// the accepted nick may be moderated, not necessarily the same as requested
+
+	// update local state and TUI, notice the new nick
+	chatter.nick = acceptedNick.(string)
+	chatter.updatePrompt()
+	line.HidePrompt()
+	fmt.Printf("Your are now known as `%s`\n", acceptedNick)
+	line.ShowPrompt()
 }
 
 func (chatter *Chatter) gotoRoom(roomID string) {
+
+	// showcase the idiomatic HBI way of (asynchronous) service call.
+	// as the service is invoked, it's at its own discrepancy to back-script this consumer,
+	// to change its representatiion states as consequences of the service call. actually
+	// that's not only the requesting consumer, but all consumer instances connected to the
+	// service, are scripted in realtime response to this particular service call, in largely
+	// the same way (asynchronous server-pushing), of state transition to realize the overall
+	// system consequences.
+
 	if err := chatter.po.Notif(fmt.Sprintf(`
 GotoRoom(%#v)
 `, roomID)); err != nil {
@@ -108,6 +163,12 @@ GotoRoom(%#v)
 }
 
 func (chatter *Chatter) say(msg string) {
+
+	// showcase the idiomatic HBI way of (asynchronous) service call, with binary data
+	// data following its `receiving-code`, together posted to the service for landing.
+	// the service is expected to notify the success-of-display of the message, by
+	// back-scripting this consumer to land `Said(msg_id)` during the `after-posting stage`
+	// of the implicitly started posting conversation from `po.notif_data()`.
 
 	// record msg to send in local log
 	msgID := -1
@@ -131,7 +192,7 @@ func (chatter *Chatter) say(msg string) {
 
 	// prepare binary data
 	msgBuf := []byte(msg)
-	// showcase notif with binary payload
+	// notif with binary payload
 	if err := chatter.po.NotifData(fmt.Sprintf(`
 Say(%d, %d)
 `, msgID, len(msgBuf)), msgBuf); err != nil {
@@ -219,7 +280,7 @@ func (chatter *Chatter) updatePrompt() {
 	line.ChangePrompt(chatter.prompt)
 }
 
-func (chatter *Chatter) NickAccepted(nick string) {
+func (chatter *Chatter) NickChanged(nick string) {
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
 
