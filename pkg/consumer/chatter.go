@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"math"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/complyue/hbi"
 	"github.com/complyue/hbi/interop"
@@ -237,6 +239,145 @@ func (chatter *Chatter) listLocalFiles() {
 	}
 }
 
+func (chatter *Chatter) uploadFile(fn string) {
+	line.HidePrompt()
+	defer line.ShowPrompt()
+
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+	if err != nil {
+		panic(err)
+	}
+	if _, err := os.Stat(roomDir); os.IsNotExist(err) {
+		fmt.Printf("Room dir not there: [%s]\n", roomDir)
+		return
+	}
+
+	fpth := filepath.Join(roomDir, fn)
+	if fi, err := os.Stat(fpth); os.IsNotExist(err) {
+		fmt.Printf("File not there: [%s]\n", fpth)
+		return
+	} else if !fi.Mode().IsRegular() {
+		fmt.Printf("Not a file: [%s]\n", fpth)
+		return
+	}
+
+	f, err := os.Open(fpth)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	// get file data size
+	fsz, err := f.Seek(0, 2)
+	if err != nil {
+		panic(err)
+	}
+
+	totalKB := int64(math.Ceil(float64(fsz) / 1024))
+	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
+	startTime := time.Now()
+
+	// prepare to send file data from beginning, calculate checksum by the way
+	if _, err = f.Seek(0, 0); err != nil {
+		panic(err)
+	}
+	var chksum uint32
+
+	// start a new posting conversation
+	co, err := chatter.po.NewCo()
+	if err != nil {
+		panic(err)
+	}
+	func() {
+		defer co.Close() // close this po co for sure, on leaving this one-off func
+
+		// send out receiving-code followed by binary stream
+		if err = co.SendCode(
+			fmt.Sprintf(`
+RecvFile(%#v, %#v, %d)
+`, chatter.inRoom, fn, fsz)); err != nil {
+			panic(err)
+		}
+
+		// the implemented solution here is very anti-throughput,
+		// the wire is hogged by this conversation for a full network roundtrip,
+		// the pipeline will be drained due to blocking wait.
+		//
+		// but for demonstration purpose, this solution can get the job done at least.
+		//
+		// a better solution, that's throughput-wise, should be the client submiting an upload
+		// intent, and if the service accepts the meta info, it then opens a posting conversation
+		// from server side, requests the hosting endpoint of the client to do upload; or in
+		// the other case, notify the reason why it's not accepted.
+		if refuseReason, err := co.RecvObj(); err != nil {
+			panic(err)
+		} else if refuseReason != nil {
+			fmt.Printf("Server refused the upload: %s", refuseReason)
+			return
+		}
+
+		// nothing prevents the file from growing as we're sending, we only send
+		// as much as glanced above, so count remaining bytes down,
+		// send one 1-KB-chunk at max at a time.
+		bytesRemain := fsz
+		chunk := make([]byte, 1024) // reused 1 KB buffer
+
+		// upload accepted, proceed to upload file data
+		startTime = time.Now()
+		if err = co.SendStream(func() []byte {
+			if bytesRemain <= 0 {
+				fmt.Printf(
+					// overwrite line above prompt
+					"\x1B[1A\r\x1B[0K All %12d KB sent out.", totalKB,
+				)
+				return nil
+			}
+
+			remainKB := int64(math.Ceil(float64(bytesRemain) / 1024))
+			fmt.Printf(
+				// overwrite line above prompt
+				"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...", remainKB, totalKB,
+			)
+
+			if bytesRemain < int64(len(chunk)) {
+				chunk = chunk[:bytesRemain]
+			}
+			n, err := f.Read(chunk)
+			if err != nil {
+				if err == io.EOF {
+					panic("file shrunk !?!")
+				}
+				panic(err)
+			}
+			bytesRemain -= int64(n)
+			d := chunk[:n]
+			chksum = crc32.Update(chksum, crc32.IEEETable, d)
+			return d
+		}); err != nil {
+			panic(err)
+		}
+	}()
+
+	// receive response AFTER the posting conversation closed,
+	// this is crucial for overall throughput.
+	peerChksum, err := co.RecvObj()
+	if err != nil {
+		panic(err)
+	}
+	elapsed := time.Since(startTime)
+
+	fmt.Printf(
+		// overwrite line above
+		"\x1B[1A\r\x1B[0K All %d KB uploaded in %v\n", totalKB, elapsed)
+	// validate chksum calculated at peer side as it had all data received
+	if peerChksum != chksum {
+		fmt.Println("But checksum mismatch !?!")
+	} else {
+		fmt.Printf(`
+@@ uploaded %x [%s]
+`, chksum, fn)
+	}
+}
+
 func (chatter *Chatter) keepChatting() {
 
 	for {
@@ -278,6 +419,7 @@ func (chatter *Chatter) keepChatting() {
 			// list server files
 		} else if code[0] == '>' {
 			// upload file
+			chatter.uploadFile(strings.TrimSpace(code[1:]))
 		} else if code[0] == '<' {
 			// download file
 		} else if code[0] == '?' {

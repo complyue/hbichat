@@ -165,7 +165,6 @@ Say({msg_id!r}, {len(msg_buf)!r})
             lg.show(f"Not a file: [{fpth}]")
             return
 
-        start_time = time.monotonic()
         with open(fpth, "rb") as f:
             # get file data size
             f.seek(0, 2)
@@ -185,17 +184,19 @@ Say({msg_id!r}, {len(msg_buf)!r})
                 # send one 1-KB-chunk at max at a time.
                 bytes_remain = fsz
                 while bytes_remain > 0:
-                    chunk = f.read(min(1024, bytes_remain))
-                    assert len(chunk) > 0, "file shrunk !?!"
-                    bytes_remain -= len(chunk)
-
-                    yield chunk  # yield it so as to be streamed to server
-                    chksum = crc32(chunk, chksum)  # update chksum
-
                     remain_kb = int(math.ceil(bytes_remain / 1024))
                     lg.show(  # overwrite line above prompt
                         f"\x1B[1A\r\x1B[0K {remain_kb:12d} of {total_kb:12d} KB remaining ..."
                     )
+
+                    chunk = f.read(min(1024, bytes_remain))
+                    assert len(chunk) > 0, "file shrunk !?!"
+
+                    yield chunk  # yield it so as to be streamed to server
+
+                    bytes_remain -= len(chunk)
+                    chksum = crc32(chunk, chksum)  # update chksum
+
                 assert bytes_remain == 0, "?!"
 
                 # overwrite line above prompt
@@ -226,6 +227,7 @@ RecvFile({self.in_room!r}, {fn!r}, {fsz!r})
                     return
 
                 # upload accepted, proceed to upload file data
+                start_time = time.monotonic()
                 await co.send_data(stream_file_data())
 
         # receive response AFTER the posting conversation closed,
