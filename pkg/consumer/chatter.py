@@ -2,6 +2,7 @@ import asyncio
 import math
 import os.path
 import time
+import stat
 import traceback
 from zlib import crc32
 
@@ -141,6 +142,8 @@ Say({msg_id!r}, {len(msg_buf)!r})
                 s = os.stat(os.path.join(room_dir, fn))
             except OSError:
                 pass
+            if not stat.S_ISREG(s.st_mode):
+                continue
             fszkb = int(math.ceil(s.st_size / 1024))
             fnl.append(f"{fszkb:12d} KB\t{fn}")
 

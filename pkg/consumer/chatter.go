@@ -3,6 +3,10 @@ package consumer
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
+	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -200,6 +204,39 @@ Say(%d, %d)
 	}
 }
 
+func (chatter *Chatter) listLocalFiles() {
+	line.HidePrompt()
+	defer line.ShowPrompt()
+
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+	if err != nil {
+		panic(err)
+	}
+	if fi, err := os.Stat(roomDir); os.IsNotExist(err) {
+		fmt.Printf("Making room dir [%s] ...\n", roomDir)
+		if err = os.MkdirAll(roomDir, 0755); err != nil {
+			panic(err)
+		}
+	} else if !fi.Mode().IsDir() {
+		panic(errors.Errorf("not a dir: %s", roomDir))
+	}
+
+	if files, err := ioutil.ReadDir(roomDir); err != nil {
+		panic(err)
+	} else {
+		for _, file := range files {
+			if !file.Mode().IsRegular() {
+				continue
+			}
+			fn := file.Name()
+			if strings.ContainsRune(".~!?*", rune(fn[0])) {
+				continue // ignore strange file names
+			}
+			fmt.Printf("%12d KB\t%s\n", int64(math.Ceil(float64(file.Size())/1024)), fn)
+		}
+	}
+}
+
 func (chatter *Chatter) keepChatting() {
 
 	for {
@@ -236,6 +273,7 @@ func (chatter *Chatter) keepChatting() {
 			chatter.setNick(nick)
 		} else if code[0] == '.' {
 			// list local files
+			chatter.listLocalFiles()
 		} else if code[0] == '^' {
 			// list server files
 		} else if code[0] == '>' {

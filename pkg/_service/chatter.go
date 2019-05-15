@@ -83,7 +83,10 @@ func (chatter *Chatter) welcomeChatter() {
 @@ There're %d room(s) open, and you are in #%s now.
 `, chatter.nick, chatter.ho.LocalAddr(), len(rooms), chatter.inRoom.roomID))
 		for roomID, room := range rooms {
-			welcomeText.WriteString(fmt.Sprintf("  -*-\t%d chatter(s) in room #%s\n", len(room.chatters), roomID))
+			room.Lock()
+			nchatters := len(room.chatters)
+			room.Unlock()
+			welcomeText.WriteString(fmt.Sprintf("  -*-\t%d chatter(s) in room #%s\n", nchatters, roomID))
 		}
 		if err = co.SendCode(fmt.Sprintf(`
 NickChanged(%#v)
