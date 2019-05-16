@@ -288,15 +288,16 @@ func (chatter *Chatter) uploadFile(fn string) {
 		panic(err)
 	}
 
-	// these need to be accessed both inside and outside of data stream cb, define here
-	totalKB := int64(math.Ceil(float64(fsz) / 1024))
-	var startTime time.Time
-
 	// prepare to send file data from beginning, calculate checksum by the way
 	if _, err = f.Seek(0, 0); err != nil {
 		panic(err)
 	}
 	var chksum uint32
+
+	// these need to be accessed both inside and outside of data stream cb, define here
+	var startTime time.Time
+	totalKB := int64(math.Ceil(float64(fsz) / 1024))
+	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
 
 	// start a new posting conversation
 	co, err := chatter.po.NewCo()
@@ -334,7 +335,6 @@ RecvFile(%#v, %#v, %d)
 
 		// upload accepted, proceed to upload file data
 		uploadAccepted = true
-		fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
 		startTime = time.Now()
 
 		// nothing prevents the file from growing as we're sending, we only send

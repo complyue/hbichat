@@ -169,12 +169,13 @@ Say({msg_id!r}, {len(msg_buf)!r})
             # get file data size
             f.seek(0, 2)
             fsz = f.tell()
-            total_kb = int(math.ceil(fsz / 1024))
-            lg.show(f" Start uploading {total_kb} KB data ...")
 
             # prepare to send file data from beginning, calculate checksum by the way
             f.seek(0, 0)
             chksum = 0
+
+            total_kb = int(math.ceil(fsz / 1024))
+            lg.show(f" Start uploading {total_kb} KB data ...")
 
             def stream_file_data():  # a generator function is ideal for binary data streaming
                 nonlocal chksum  # this is needed outer side, write to that var
