@@ -398,6 +398,149 @@ RecvFile(%#v, %#v, %d)
 	}
 }
 
+func (chatter *Chatter) listServerFiles() {
+	co, err := chatter.po.NewCo()
+	if err != nil {
+		panic(err)
+	}
+	func() {
+		defer co.Close()
+
+		// send the file listing request
+		if err := co.SendCode(fmt.Sprintf(`
+ListFiles(%#v)
+`, chatter.inRoom)); err != nil {
+			panic(err)
+		}
+
+		// close this posting conversation after all requests sent,
+		// so the wire is released immediately,
+		// for other posting conversaions to start off,
+		// without waiting roundtrip time of this conversation's response.
+	}()
+
+	// once closed, this posting conversation enters `after-posting stage`,
+	// a closed po co can do NO sending anymore, but the receiving & processing of response,
+	// should be carried out in this stage.
+
+	fil, err := co.RecvObj()
+	if err != nil {
+		panic(err)
+	}
+
+	// show received file info list
+	for _, fi := range fil.([]interface{}) {
+		fsz, fn := fi.([]interface{})[0].(int64), fi.([]interface{})[1].(string)
+		fmt.Printf("%12d KB\t%s\n", int(math.Ceil(float64(fsz))), fn)
+	}
+}
+
+func (chatter *Chatter) downloadFile(fn string) {
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+	if err != nil {
+		panic(err)
+	}
+	if err = os.MkdirAll(roomDir, 0755); err != nil {
+		panic(err)
+	}
+
+	// start a new posting conversation
+	co, err := chatter.po.NewCo()
+	if err != nil {
+		panic(err)
+	}
+	func() {
+		defer co.Close() // close this po co for sure, on leaving this one-off func
+
+		// send out download request
+		if err = co.SendCode(
+			fmt.Sprintf(`
+SendFile(%#v, %#v)
+`, chatter.inRoom, fn)); err != nil {
+			panic(err)
+		}
+	}()
+
+	// receive response AFTER the posting conversation closed,
+	// this is crucial for overall throughput.
+	dldResp, err := co.RecvObj()
+	if err != nil {
+		panic(err)
+	}
+	fsz, msg := dldResp.([]interface{})[0].(int64), dldResp.([]interface{})[1]
+	if fsz < 0 {
+		fmt.Printf("Server refused file download: %s\n", msg)
+		return
+	} else if msg != nil {
+		fmt.Printf("@@ Server: %s", msg)
+	}
+
+	fpth := filepath.Join(roomDir, fn)
+	f, err := os.Create(fpth)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	// prepare to recv file data from beginning, calculate checksum by the way
+	var chksum uint32
+
+	totalKB := int64(math.Ceil(float64(fsz) / 1024))
+	fmt.Printf(" Start downloading %d KB data ...\n", totalKB)
+
+	// receive data stream from server
+	startTime := time.Now()
+	bytesRemain := fsz
+	chunk := make([]byte, 1024) // reused 1 KB buffer
+	if err = co.RecvStream(func() ([]byte, error) {
+		if bytesRemain < fsz { // last chunk has been received, write to file
+			n := len(chunk)
+			for d := chunk; len(d) > 0; d = d[n:] {
+				if n, err = f.Write(d); err != nil {
+					return nil, err
+				}
+			}
+			// update chksum
+			chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
+		}
+
+		if bytesRemain <= 0 {
+			fmt.Printf( // overwrite line above prompt
+				"\x1B[1A\r\x1B[0K All %12d KB received.\n", totalKB,
+			)
+			return nil, nil
+		}
+
+		remainKB := int64(math.Ceil(float64(bytesRemain) / 1024))
+		fmt.Printf( // overwrite line above prompt
+			"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...\n", remainKB, totalKB,
+		)
+
+		if bytesRemain < int64(len(chunk)) {
+			chunk = chunk[:bytesRemain]
+		}
+		bytesRemain -= int64(len(chunk))
+		return chunk, nil
+	}); err != nil {
+		return
+	}
+
+	peerChksum, err := co.RecvObj()
+	if err != nil {
+		panic(err)
+	}
+	elapsed := time.Since(startTime)
+	fmt.Printf( // overwrite line above
+		"\x1B[1A\r\x1B[0K All %d KB downloaded in %v\n", totalKB, elapsed)
+	// validate chksum calculated at peer side as it had all data sent
+	if fmt.Sprintf("%x", peerChksum) != fmt.Sprintf("%x", chksum) {
+		fmt.Printf("@*@ But checksum mismatch %x vs %x !?!\n", peerChksum, chksum)
+	} else {
+		fmt.Printf(`
+@@ downloaded %x [%s]
+`, chksum, fn)
+	}
+}
+
 func (chatter *Chatter) keepChatting() {
 
 	for {
@@ -437,11 +580,13 @@ func (chatter *Chatter) keepChatting() {
 			chatter.listLocalFiles()
 		} else if code[0] == '^' {
 			// list server files
+			chatter.listServerFiles()
 		} else if code[0] == '>' {
 			// upload file
 			chatter.uploadFile(strings.TrimSpace(code[1:]))
 		} else if code[0] == '<' {
 			// download file
+			chatter.downloadFile(strings.TrimSpace(code[1:]))
 		} else if code[0] == '?' {
 			// show usage
 			line.HidePrompt()

@@ -64,8 +64,8 @@ SetNick({nick!r})
             # with RTT between requests eliminated.
 
         # once closed, this posting conversation enters `after-posting stage`,
-        # a closed po co can do NO sending anymore, but the receiving of response, as in the
-        # classic pattern, needs to be received and processed.
+        # a closed po co can do NO sending anymore, but the receiving & processing of response,
+        # should be carried out in this stage.
 
         # execution of current coroutine is actually suspended during `co.recv_obj()`, until
         # the inbound payload matching `co.co_seq` appears on the wire, at which time that
@@ -264,13 +264,13 @@ ListFiles({self.in_room!r})
 
             # close this posting conversation after all requests sent,
             # so the wire is released immediately,
-            # for other posting conversaions to start sending,
-            # without waiting roundtrip of this conversation's response.
+            # for other posting conversaions to start off,
+            # without waiting roundtrip time of this conversation's response.
 
-        # a closed conversation can do NO sending anymore,
-        # but the receiving of response is very much prefered to be
-        # carried out after it's closed.
-        # this is crucial for overall throughput with the underlying HBI wire.
+        # once closed, this posting conversation enters `after-posting stage`,
+        # a closed po co can do NO sending anymore, but the receiving & processing of response,
+        # should be carried out in this stage.
+
         fil = await co.recv_obj()
 
         # show received file info list
@@ -286,8 +286,9 @@ ListFiles({self.in_room!r})
             self.line_getter.show(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)
 
-        async with self.po.co() as co:  # start a posting conversation
+        async with self.po.co() as co:  # start a new posting conversation
 
+            # send out download request
             await co.send_code(
                 rf"""
 SendFile({self.in_room!r}, {fn!r})
@@ -305,7 +306,6 @@ SendFile({self.in_room!r}, {fn!r})
 
         fpth = os.path.join(room_dir, fn)
 
-        start_time = time.monotonic()
         with open(fpth, "wb") as f:
             total_kb = int(math.ceil(fsz / 1024))
             lg.show(f" Start downloading {total_kb} KB data ...")
@@ -344,6 +344,7 @@ SendFile({self.in_room!r}, {fn!r})
                 lg.show(f"\x1B[1A\r\x1B[0K All {total_kb} KB received.")
 
             # receive data stream from server
+            start_time = time.monotonic()
             await co.recv_data(stream_file_data())
 
         peer_chksum = await co.recv_obj()
