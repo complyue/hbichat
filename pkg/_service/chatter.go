@@ -293,7 +293,7 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 		if bytesRemain < fsz { // last chunk has been received, write to file
 			n := len(chunk)
 			for d := chunk; len(d) > 0; d = d[n:] {
-				if n, err = f.Write(chunk); err != nil {
+				if n, err = f.Write(d); err != nil {
 					return nil, err
 				}
 			}

@@ -253,7 +253,7 @@ Said({msg_id!r})
                 s = os.stat(os.path.join(room_dir, fn))
             except OSError:
                 pass
-            fil.append((s.st_size, fn))
+            fil.append([s.st_size, fn])
 
         # send back repr for peer to land & receive as obj
         await self.ho.co.send_obj(repr(fil))
