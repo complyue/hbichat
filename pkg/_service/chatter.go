@@ -1,8 +1,11 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"hash/crc32"
+	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -323,4 +326,125 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 	chatter.inRoom.Post(chatter, fmt.Sprintf(`
  @*@ I just uploaded a file %x %d KB [%s]
 `, chksum, totalKB, fn))
+}
+
+func (chatter *Chatter) ListFiles(roomID string) {
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
+	if err != nil {
+		panic(err)
+	}
+	if _, err := os.Stat(roomDir); os.IsNotExist(err) {
+		glog.Infof("Making room dir [%s] ...\n", roomDir)
+		if err = os.MkdirAll(roomDir, 0755); err != nil {
+			panic(err)
+		}
+	}
+
+	fil := make([]interface{}, 0, 50)
+	if files, err := ioutil.ReadDir(roomDir); err != nil {
+		panic(err)
+	} else {
+		for _, file := range files {
+			if !file.Mode().IsRegular() {
+				continue
+			}
+			fn := file.Name()
+			if strings.ContainsRune(".~!?*", rune(fn[0])) {
+				continue // ignore strange file names
+			}
+			fil = append(fil, []interface{}{
+				file.Size(), fn,
+			})
+		}
+	}
+
+	// send back repr for peer to land & receive as obj
+	if err = chatter.ho.Co().SendObj(interop.JSONArray(fil)); err != nil {
+		panic(err)
+	}
+}
+
+func (chatter *Chatter) SendFile(roomID string, fn string) {
+	co := chatter.ho.Co()
+
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
+	if err != nil {
+		panic(err)
+	}
+
+	msg := ""
+	fpth := filepath.Join(roomDir, fn)
+	if fi, err := os.Stat(fpth); os.IsNotExist(err) || !fi.Mode().IsRegular() {
+		if err = co.SendObj(interop.JSONArray([]interface{}{
+			-1, "no such file",
+		})); err != nil {
+			panic(err)
+		}
+		return
+	} else {
+		msg = fmt.Sprintf("last modified: %s", fi.ModTime().Format("2006-01-02 15:04:05"))
+	}
+
+	f, err := os.Open(fpth)
+	if err != nil {
+		if err = co.SendObj(interop.JSONArray([]interface{}{
+			-1, fmt.Sprintf("%+v", err),
+		})); err != nil {
+			panic(err)
+		}
+		return
+	}
+	defer f.Close()
+	// get file data size
+	fsz, err := f.Seek(0, 2)
+	if err != nil {
+		panic(err)
+	}
+
+	if err = co.SendObj(interop.JSONArray([]interface{}{
+		fsz, msg,
+	})); err != nil {
+		panic(err)
+	}
+
+	// prepare to send file data from beginning, calculate checksum by the way
+	if _, err = f.Seek(0, 0); err != nil {
+		panic(err)
+	}
+	var chksum uint32
+
+	// nothing prevents the file from growing as we're sending, we only send
+	// as much as glanced above, so count remaining bytes down,
+	// send one 1-KB-chunk at max at a time.
+	bytesRemain := fsz
+	chunk := make([]byte, 1024) // reused 1 KB buffer
+	if err = co.SendStream(func() ([]byte, error) {
+		if bytesRemain <= 0 {
+			return nil, nil
+		}
+
+		if bytesRemain < int64(len(chunk)) {
+			chunk = chunk[:bytesRemain]
+		}
+		if n, err := f.Read(chunk); err != nil {
+			if err == io.EOF {
+				return nil, errors.New("file shrunk")
+			}
+			return nil, err
+		} else if n < len(chunk) {
+			// TODO read in a loop ?
+			return nil, errors.New("chunk not fully read")
+		}
+		bytesRemain -= int64(len(chunk))
+		// update chksum
+		chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
+		return chunk, nil
+	}); err != nil {
+		return
+	}
+
+	// send chksum at last
+	if err = co.SendObj(hbi.Repr(chksum)); err != nil {
+		panic(err)
+	}
 }

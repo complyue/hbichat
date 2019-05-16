@@ -472,7 +472,7 @@ SendFile(%#v, %#v)
 		fmt.Printf("Server refused file download: %s\n", msg)
 		return
 	} else if msg != nil {
-		fmt.Printf("@@ Server: %s", msg)
+		fmt.Printf("@@ Server: %s\n", msg)
 	}
 
 	fpth := filepath.Join(roomDir, fn)
