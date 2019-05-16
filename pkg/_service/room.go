@@ -60,6 +60,7 @@ func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 
 func (room *Room) Post(from *Chatter, content string) {
 	var msg *ds.Msg
+	var chatters []*Chatter
 
 	func() {
 		room.Lock()
@@ -73,13 +74,19 @@ func (room *Room) Post(from *Chatter, content string) {
 		msg = &room.msgs[len(room.msgs)-1]
 		// invalidate log cache
 		room.cachedMsgLog = nil
+
+		// snapshot the chatter list while room still locked
+		chatters = make([]*Chatter, 0, len(room.chatters))
+		for chatter := range room.chatters {
+			chatters = append(chatters, chatter)
+		}
 	}()
 
 	notifOut := &ds.MsgsInRoom{room.roomID, []ds.Msg{*msg}}
 	notifCode := fmt.Sprintf(`
 RoomMsgs(%#v)
 `, notifOut)
-	for chatter := range room.chatters {
+	for _, chatter := range chatters {
 		if chatter == from {
 			continue // don't send msg to self
 		}
