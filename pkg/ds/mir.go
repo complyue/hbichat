@@ -30,6 +30,9 @@ func NewMsgsInRoom(roomID string, msgs_a []interface{}) *MsgsInRoom {
 
 func (ml *MsgsInRoom) Format(s fmt.State, verb rune) {
 	switch verb {
+	case 's': // string form
+		io.WriteString(s, "MsgsInRoom>#")
+		io.WriteString(s, ml.RoomID)
 	case 'v':
 		if s.Flag('#') { // repr form
 			io.WriteString(s, "MsgsInRoom(")
@@ -52,10 +55,6 @@ func (ml *MsgsInRoom) Format(s fmt.State, verb rune) {
 	}
 }
 
-func (ml *MsgsInRoom) String() string {
-	return fmt.Sprintf("%+v", ml)
-}
-
 type Msg struct {
 	From    string
 	Content string
@@ -71,6 +70,9 @@ func NewMsg(from, content string, time_a int64) *Msg {
 
 func (msg *Msg) Format(s fmt.State, verb rune) {
 	switch verb {
+	case 's': // string form
+		io.WriteString(s, "Msg<@")
+		io.WriteString(s, msg.From)
 	case 'v':
 		if s.Flag('#') { // repr form
 			io.WriteString(s, "Msg(")
@@ -80,19 +82,16 @@ func (msg *Msg) Format(s fmt.State, verb rune) {
 			io.WriteString(s, ",")
 			io.WriteString(s, fmt.Sprintf("%d", msg.Time.Unix()))
 			io.WriteString(s, ")")
-		} else { // str form
+		} else { // value form
 			if s.Flag('+') {
 				io.WriteString(s, "[")
 				io.WriteString(s, msg.Time.Format("Jan 02 15:04:05Z07"))
 				io.WriteString(s, "] ")
 			}
+			io.WriteString(s, "@")
 			io.WriteString(s, msg.From)
 			io.WriteString(s, ": ")
 			io.WriteString(s, msg.Content)
 		}
 	}
-}
-
-func (msg *Msg) String() string {
-	return fmt.Sprintf("%+v", msg)
 }

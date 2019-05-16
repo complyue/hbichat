@@ -84,6 +84,7 @@ func NewConsumerEnv() *hbi.HostingEnv {
 	return he
 }
 
+// Chatter defines consumer side chatter object
 type Chatter struct {
 	po *hbi.PostingEnd
 	ho *hbi.HostingEnd
@@ -95,6 +96,24 @@ type Chatter struct {
 	prompt string
 
 	mu sync.Mutex
+}
+
+// NamesToExpose declares names of chatter methods to be exposed to an HBI `HostingEnv`,
+// when a chatter object is exposed as a reactor with `he.ExposeReactor(chatter)`.
+//
+// Note: this is optional, and if omitted, all exported (according to Golang rule, whose
+// name starts with a capital letter) methods and fields from the `chatter` object,
+// including those inherited from embedded fields, are exposed.
+func (chatter *Chatter) NamesToExpose() []string {
+	return []string{
+		"ShowNotice",
+		"NickChanged",
+		"InRoom",
+		"RoomMsgs",
+		"Said",
+		"ChatterJoined",
+		"ChatterLeft",
+	}
 }
 
 func (chatter *Chatter) setNick(nick string) {
@@ -240,9 +259,6 @@ func (chatter *Chatter) listLocalFiles() {
 }
 
 func (chatter *Chatter) uploadFile(fn string) {
-	line.HidePrompt()
-	defer line.ShowPrompt()
-
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
 	if err != nil {
 		panic(err)
@@ -272,9 +288,9 @@ func (chatter *Chatter) uploadFile(fn string) {
 		panic(err)
 	}
 
+	// these need to be accessed both inside and outside of data stream cb, define here
 	totalKB := int64(math.Ceil(float64(fsz) / 1024))
-	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
-	startTime := time.Now()
+	var startTime time.Time
 
 	// prepare to send file data from beginning, calculate checksum by the way
 	if _, err = f.Seek(0, 0); err != nil {
@@ -287,6 +303,7 @@ func (chatter *Chatter) uploadFile(fn string) {
 	if err != nil {
 		panic(err)
 	}
+	uploadAccepted := false
 	func() {
 		defer co.Close() // close this po co for sure, on leaving this one-off func
 
@@ -311,51 +328,56 @@ RecvFile(%#v, %#v, %d)
 		if refuseReason, err := co.RecvObj(); err != nil {
 			panic(err)
 		} else if refuseReason != nil {
-			fmt.Printf("Server refused the upload: %s", refuseReason)
+			fmt.Printf("Server refused the upload: %s\n", refuseReason)
 			return
 		}
+
+		// upload accepted, proceed to upload file data
+		uploadAccepted = true
+		fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
+		startTime = time.Now()
 
 		// nothing prevents the file from growing as we're sending, we only send
 		// as much as glanced above, so count remaining bytes down,
 		// send one 1-KB-chunk at max at a time.
 		bytesRemain := fsz
 		chunk := make([]byte, 1024) // reused 1 KB buffer
-
-		// upload accepted, proceed to upload file data
-		startTime = time.Now()
-		if err = co.SendStream(func() []byte {
+		if err = co.SendStream(func() ([]byte, error) {
 			if bytesRemain <= 0 {
-				fmt.Printf(
-					// overwrite line above prompt
-					"\x1B[1A\r\x1B[0K All %12d KB sent out.", totalKB,
+				fmt.Printf( // overwrite line above prompt
+					"\x1B[1A\r\x1B[0K All %12d KB sent out.\n", totalKB,
 				)
-				return nil
+				return nil, nil
 			}
 
 			remainKB := int64(math.Ceil(float64(bytesRemain) / 1024))
-			fmt.Printf(
-				// overwrite line above prompt
-				"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...", remainKB, totalKB,
+			fmt.Printf( // overwrite line above prompt
+				"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...\n", remainKB, totalKB,
 			)
 
 			if bytesRemain < int64(len(chunk)) {
 				chunk = chunk[:bytesRemain]
 			}
-			n, err := f.Read(chunk)
-			if err != nil {
+			if n, err := f.Read(chunk); err != nil {
 				if err == io.EOF {
-					panic("file shrunk !?!")
+					return nil, errors.New("file shrunk")
 				}
-				panic(err)
+				return nil, err
+			} else if n < len(chunk) {
+				// TODO read in a loop ?
+				return nil, errors.New("chunk not fully read")
 			}
-			bytesRemain -= int64(n)
-			d := chunk[:n]
-			chksum = crc32.Update(chksum, crc32.IEEETable, d)
-			return d
+			bytesRemain -= int64(len(chunk))
+			// update chksum
+			chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
+			return chunk, nil
 		}); err != nil {
-			panic(err)
+			return
 		}
 	}()
+	if !uploadAccepted {
+		return
+	}
 
 	// receive response AFTER the posting conversation closed,
 	// this is crucial for overall throughput.
@@ -364,13 +386,11 @@ RecvFile(%#v, %#v, %d)
 		panic(err)
 	}
 	elapsed := time.Since(startTime)
-
-	fmt.Printf(
-		// overwrite line above
+	fmt.Printf( // overwrite line above
 		"\x1B[1A\r\x1B[0K All %d KB uploaded in %v\n", totalKB, elapsed)
 	// validate chksum calculated at peer side as it had all data received
-	if peerChksum != chksum {
-		fmt.Println("But checksum mismatch !?!")
+	if fmt.Sprintf("%x", peerChksum) != fmt.Sprintf("%x", chksum) {
+		fmt.Printf("@*@ But checksum mismatch %x vs %x !?!\n", peerChksum, chksum)
 	} else {
 		fmt.Printf(`
 @@ uploaded %x [%s]

@@ -2,6 +2,10 @@ package service
 
 import (
 	"fmt"
+	"hash/crc32"
+	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -57,6 +61,7 @@ func NewServiceEnv() *hbi.HostingEnv {
 	return he
 }
 
+// Chatter defines service side chatter object
 type Chatter struct {
 	po *hbi.PostingEnd
 	ho *hbi.HostingEnd
@@ -65,6 +70,23 @@ type Chatter struct {
 	nick   string
 
 	mu sync.Mutex
+}
+
+// NamesToExpose declares names of chatter methods to be exposed to an HBI `HostingEnv`,
+// when a chatter object is exposed as a reactor with `he.ExposeReactor(chatter)`.
+//
+// Note: this is optional, and if omitted, all exported (according to Golang rule, whose
+// name starts with a capital letter) methods and fields from the `chatter` object,
+// including those inherited from embedded fields, are exposed.
+func (chatter *Chatter) NamesToExpose() []string {
+	return []string{
+		"SetNick",
+		"GotoRoom",
+		"Say",
+		"RecvFile",
+		"ListFiles",
+		"SendFile",
+	}
 }
 
 func (chatter *Chatter) welcomeChatter() {
@@ -207,4 +229,98 @@ Said(%d)
 		panic(err)
 	}
 
+}
+
+func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
+	co := chatter.ho.Co()
+
+	// the implemented solution here is very anti-throughput,
+	// the wire is hogged by this conversation for a full network roundtrip,
+	// the pipeline will be drained due to blocking wait.
+	//
+	// but for demonstration purpose, this solution can get the job done at least.
+	//
+	// a better solution, that's throughput-wise, should be the client submiting an upload
+	// intent, and if the service accepts the meta info, it then opens a posting conversation
+	// from server side, requests the hosting endpoint of the client to do upload; or in
+	// the other case, notify the reason why it's not accepted.
+
+	if fsz > 50*1024*1024 { // 50 MB at most
+		// send the reason as string, why it's refused
+		if err := co.SendObj(hbi.Repr("file too large!")); err != nil {
+			panic(err)
+		}
+		return
+	}
+	if fsz < 20*1024 { // 20 MB at least
+		// send the reason as string, why it's refused
+		if err := co.SendObj(hbi.Repr("file too small!")); err != nil {
+			panic(err)
+		}
+		return
+	}
+
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
+	if err != nil {
+		panic(err)
+	}
+	if err = os.MkdirAll(roomDir, 0755); err != nil {
+		panic(err)
+	}
+
+	fpth := filepath.Join(roomDir, fn)
+
+	f, err := os.Create(fpth)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+
+	// these need to be accessed both inside and outside of data stream cb, define here
+	totalKB := int64(math.Ceil(float64(fsz) / 1024))
+	var chksum uint32
+
+	// nil as refuse_reason means the upload is accepted
+	if err = co.SendObj("nil"); err != nil {
+		panic(err)
+	}
+
+	// recv data with one 1-KB-chunk at max at a time.
+	bytesRemain := fsz
+	chunk := make([]byte, 1024) // reused 1 KB buffer
+	// receive data stream from client
+	if err = co.RecvStream(func() ([]byte, error) {
+		if bytesRemain < fsz { // last chunk has been received, write to file
+			n := len(chunk)
+			for d := chunk; len(d) > 0; d = d[n:] {
+				if n, err = f.Write(chunk); err != nil {
+					return nil, err
+				}
+			}
+			// update chksum
+			chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
+		}
+
+		if bytesRemain <= 0 { // full file data has been received
+			return nil, nil
+		}
+
+		if bytesRemain < int64(len(chunk)) {
+			chunk = chunk[:bytesRemain]
+		}
+		bytesRemain -= int64(len(chunk))
+		return chunk, nil
+	}); err != nil {
+		panic(err)
+	}
+
+	//send back chksum for client to verify
+	if err = co.SendObj(hbi.Repr(chksum)); err != nil {
+		panic(err)
+	}
+
+	// announce this new upload
+	chatter.inRoom.Post(chatter, fmt.Sprintf(`
+ @*@ I just uploaded a file %x %d KB [%s]
+`, chksum, totalKB, fn))
 }

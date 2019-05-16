@@ -169,15 +169,15 @@ Said({msg_id!r})
         # from server side, requests the hosting endpoint of the client to do upload; or in
         # the other case, notify the reason why it's not accepted.
 
-        if fsz > 200 * 1024 * 1024:  # 200 MB at most
+        if fsz > 50 * 1024 * 1024:  # 50 MB at most
             # send the reason as string, why it's refused
             await co.send_obj(repr(f"file too large!"))
             return
-
         if fsz < 20 * 1024:  # 20 KB at least
             # send the reason as string, why it's refused
             await co.send_obj(repr(f"file too small!"))
             return
+
         room_dir = os.path.abspath(f"chat-server-files/{room_id}")
         os.makedirs(room_dir, exist_ok=True)
 
@@ -235,7 +235,7 @@ Said({msg_id!r})
         await self.in_room.post_msg(
             self,
             rf"""
- @*@ I just uploaded a file {chksum:8x} {int(math.ceil(fsz / 1024))} KB [{fn}]
+ @*@ I just uploaded a file {chksum:x} {int(math.ceil(fsz / 1024))} KB [{fn}]
 """,
         )
 
