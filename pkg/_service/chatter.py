@@ -274,7 +274,8 @@ Said({msg_id!r})
             f.seek(0, 2)
             fsz = f.tell()
 
-            # send [file-size, msg] to peer, telling it the data size to receive
+            # send [file-size, msg] to peer, telling it the data size to receive and last
+            # modification time of the file.
             msg = "last modified: " + datetime.fromtimestamp(s.st_mtime).strftime(
                 "%F %T"
             )
@@ -301,7 +302,7 @@ Said({msg_id!r})
 
                 assert bytes_remain == 0, "?!"
 
-            # upload accepted, proceed to upload file data
+            # stream file data to consumer end
             await co.send_data(stream_file_data())
 
         # send chksum at last
