@@ -11,46 +11,6 @@ from ...pkg.log import *
 logger = get_logger(__package__)
 
 
-def he_factory():  # Create a hosting env reacting to chat consumers
-    he = HostingEnv()
-
-    chatter = None  # the main reactor object
-
-    async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
-        nonlocal chatter
-
-        # create a chatter service instance and expose as reactor
-        chatter = Chatter(po, ho)
-        he.expose_reactor(chatter)
-
-        # send welcome message to new comer
-        await chatter.welcome_chatter()
-
-    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
-        nonlocal chatter
-
-        if err_reason is not None:
-            logger.error(
-                f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {err_reason!s}"
-            )
-        else:
-            logger.debug(f"Chatting consumer {chatter.po.remote_addr!s} disconnected.")
-
-        chatter.in_room.chatters.remove(chatter)
-
-    # expose standard named values for interop
-    expose_interop_values(he)
-
-    # expose all shared type of data structures
-    expose_shared_data_structures(he)
-
-    # expose magic functions
-    he.expose_function(None, __hbi_init__)
-    he.expose_function(None, __hbi_cleanup__)
-
-    return he
-
-
 # take arguments from command line
 cmdl_parser = argparse.ArgumentParser(
     prog="python -m hbichat.cmd.server",
@@ -99,6 +59,46 @@ if len(service_addr["host"]) < 1:
     service_addr["host"].append("127.0.0.1")
 
 
+def he_factory():  # Create a hosting env reacting to chat consumers
+    he = HostingEnv()
+
+    chatter = None  # the main reactor object
+
+    async def __hbi_init__(po: PostingEnd, ho: HostingEnd):
+        nonlocal chatter
+
+        # create a chatter service instance and expose as reactor
+        chatter = Chatter(po, ho)
+        he.expose_reactor(chatter)
+
+        # send welcome message to new comer
+        await chatter.welcome_chatter()
+
+    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
+        nonlocal chatter
+
+        if err_reason is not None:
+            logger.error(
+                f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {err_reason!s}"
+            )
+        else:
+            logger.debug(f"Chatting consumer {chatter.po.remote_addr!s} disconnected.")
+
+        chatter.in_room.chatters.remove(chatter)
+
+    # expose standard named values for interop
+    expose_interop_values(he)
+
+    # expose all shared type of data structures
+    expose_shared_data_structures(he)
+
+    # expose magic functions
+    he.expose_function(None, __hbi_init__)
+    he.expose_function(None, __hbi_cleanup__)
+
+    return he
+
+
 async def serve_chatting():
     server = await serve_socket(
         # listening IP address(es)
@@ -113,12 +113,7 @@ async def serve_chatting():
         )
     )
 
-    try:
-        await server.wait_closed()
-    except KeyboardInterrupt:
-        logger.info("HBI Chatting Server shutting down.")
-        server.close()
-        await server.wait_closed()
+    await server.wait_closed()
 
 
 try:

@@ -19,6 +19,47 @@ if not sys.stdout.isatty():
     logger.fatal("Can only run with a terminal!")
     sys.exit(1)
 
+# take arguments from command line
+cmdl_parser = argparse.ArgumentParser(
+    prog="python -m hbichat.cmd.client",
+    description="HBI chatting client",
+    epilog="connect to a chat server to start chatting",
+)
+cmdl_parser.add_argument(
+    "addr",
+    metavar="service_address",
+    nargs="?",
+    const="localhost:3232",
+    help="in form of <host>:<port>",
+)
+cmdl_parser.add_argument(
+    "-s",
+    "--server",
+    metavar="server_host",
+    nargs=1,
+    default=None,
+    help="server IP or name",
+)
+cmdl_parser.add_argument(
+    "-p", "--port", metavar="server_port", nargs=1, default=None, help="IP port number"
+)
+prog_args = cmdl_parser.parse_args()
+
+# apply command line arguments
+service_addr = {"host": None, "port": 3232}
+if prog_args.addr is not None:
+    host, *port = prog_args.addr.rsplit(":", 1)
+    service_addr["host"] = host
+    if port:
+        service_addr["port"] = int(port[0])
+if prog_args.server is not None:
+    service_addr["host"] = prog_args.server[0]
+if prog_args.port is not None:
+    service_addr["port"] = prog_args.port[0]
+if not service_addr["host"]:
+    service_addr["host"] = "127.0.0.1"
+
+
 # the line getter for simple terminal UI.
 # it'll be set by a coroutine upon HBI connection made to chat service,
 # the main thread waits until it's set, then runs its UI loop.
@@ -61,46 +102,6 @@ def create_he():  # Create a hosting env reacting to chat service
 
     return he
 
-
-# take arguments from command line
-cmdl_parser = argparse.ArgumentParser(
-    prog="python -m hbichat.cmd.client",
-    description="HBI chatting client",
-    epilog="connect to a chat server to start chatting",
-)
-cmdl_parser.add_argument(
-    "addr",
-    metavar="service_address",
-    nargs="?",
-    const="localhost:3232",
-    help="in form of <host>:<port>",
-)
-cmdl_parser.add_argument(
-    "-s",
-    "--server",
-    metavar="server_host",
-    nargs=1,
-    default=None,
-    help="server IP or name",
-)
-cmdl_parser.add_argument(
-    "-p", "--port", metavar="server_port", nargs=1, default=None, help="IP port number"
-)
-prog_args = cmdl_parser.parse_args()
-
-# apply command line arguments
-service_addr = {"host": None, "port": 3232}
-if prog_args.addr is not None:
-    host, *port = prog_args.addr.rsplit(":", 1)
-    service_addr["host"] = host
-    if port:
-        service_addr["port"] = int(port[0])
-if prog_args.server is not None:
-    service_addr["host"] = prog_args.server[0]
-if prog_args.port is not None:
-    service_addr["port"] = prog_args.port[0]
-if not service_addr["host"]:
-    service_addr["host"] = "127.0.0.1"
 
 line_getter = None
 
