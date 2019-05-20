@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,8 +224,8 @@ Say(%d, %d)
 	}
 }
 
-func (chatter *Chatter) listLocalFiles() {
-	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+func (chatter *Chatter) listLocalFiles(roomID string) {
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", roomID))
 	if err != nil {
 		panic(err)
 	}
@@ -253,8 +254,8 @@ func (chatter *Chatter) listLocalFiles() {
 	}
 }
 
-func (chatter *Chatter) uploadFile(fn string) {
-	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+func (chatter *Chatter) uploadFile(roomID, fn string) {
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", roomID))
 	if err != nil {
 		panic(err)
 	}
@@ -307,7 +308,7 @@ func (chatter *Chatter) uploadFile(fn string) {
 		if err = co.SendCode(
 			fmt.Sprintf(`
 RecvFile(%#v, %#v, %d)
-`, chatter.inRoom, fn, fsz)); err != nil {
+`, roomID, fn, fsz)); err != nil {
 			panic(err)
 		}
 
@@ -393,7 +394,7 @@ RecvFile(%#v, %#v, %d)
 	}
 }
 
-func (chatter *Chatter) listServerFiles() {
+func (chatter *Chatter) listServerFiles(roomID string) {
 	co, err := chatter.po.NewCo()
 	if err != nil {
 		panic(err)
@@ -404,7 +405,7 @@ func (chatter *Chatter) listServerFiles() {
 		// send the file listing request
 		if err := co.SendCode(fmt.Sprintf(`
 ListFiles(%#v)
-`, chatter.inRoom)); err != nil {
+`, roomID)); err != nil {
 			panic(err)
 		}
 
@@ -426,12 +427,12 @@ ListFiles(%#v)
 	// show received file info list
 	for _, fi := range fil.([]interface{}) {
 		fsz, fn := fi.([]interface{})[0].(int64), fi.([]interface{})[1].(string)
-		fmt.Printf("%12d KB\t%s\n", int(math.Ceil(float64(fsz))), fn)
+		fmt.Printf("%12d KB\t%s\n", int(math.Ceil(float64(fsz)/1024)), fn)
 	}
 }
 
-func (chatter *Chatter) downloadFile(fn string) {
-	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
+func (chatter *Chatter) downloadFile(roomID, fn string) {
+	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", roomID))
 	if err != nil {
 		panic(err)
 	}
@@ -451,7 +452,7 @@ func (chatter *Chatter) downloadFile(fn string) {
 		if err = co.SendCode(
 			fmt.Sprintf(`
 SendFile(%#v, %#v)
-`, chatter.inRoom, fn)); err != nil {
+`, roomID, fn)); err != nil {
 			panic(err)
 		}
 	}()
@@ -572,16 +573,16 @@ func (chatter *Chatter) keepChatting() {
 			chatter.setNick(nick)
 		} else if code[0] == '.' {
 			// list local files
-			chatter.listLocalFiles()
+			chatter.listLocalFiles(chatter.inRoom)
 		} else if code[0] == '^' {
 			// list server files
-			chatter.listServerFiles()
+			chatter.listServerFiles(chatter.inRoom)
 		} else if code[0] == '>' {
 			// upload file
-			chatter.uploadFile(strings.TrimSpace(code[1:]))
+			chatter.uploadFile(chatter.inRoom, strings.TrimSpace(code[1:]))
 		} else if code[0] == '<' {
 			// download file
-			chatter.downloadFile(strings.TrimSpace(code[1:]))
+			chatter.downloadFile(chatter.inRoom, strings.TrimSpace(code[1:]))
 		} else if code[0] == '*' {
 			// spam the service for stress-test
 			chatter.spam(code[1:])
@@ -608,7 +609,7 @@ Usage:
  < _file-name_
     download a file
 
- * [ _n_bots_=1 ] [ _n_rooms_=1 ] [ _n_msgs_=1 ] [ _n_files_=1 ] [ _file_max_kb_=2048 ]
+ * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ]
     spam the service for stress-test
 
 `)
@@ -621,21 +622,124 @@ Usage:
 }
 
 func (chatter *Chatter) spam(spec string) {
-	nBots, nRooms, nMsgs, nFiles, kbMax := 1, 1, 1, 1, 2048
+	nBots, nRooms, nMsgs, nFiles, kbMax := 10, 10, 10, 10, 1234
 	fmt.Sscanf(spec, "%d %d %d %d %d", &nBots, &nRooms, &nMsgs, &nFiles, &kbMax)
-	fmt.Printf(`
+	if kbMax > 0 {
+		fmt.Printf(`
 Start spamming with %d bots in up to %d rooms,
   each to speak up to %d messages,
   and upload/download up to %d files, each up to %d KB large ...
 
 `,
-		nBots, nRooms, nMsgs, nFiles, kbMax)
+			nBots, nRooms, nMsgs, nFiles, kbMax)
+	} else {
+		fmt.Printf(`
+Start spamming with %d bots in up to %d rooms,
+	each to speak up to %d messages,
+	and download up to %d files ...
 
+`,
+			nBots, nRooms, nMsgs, nFiles)
+	}
+
+	rand.Seed(time.Now().UnixNano())
+	var waitBots sync.WaitGroup
 	for iBot := range make([]struct{}, nBots) {
-		go func(idSpammer int) {
-			chatter.setNick(fmt.Sprintf("Spammer%d", idSpammer))
-			chatter.say(fmt.Sprintf("This is Spammer%d !", idSpammer))
-		}(iBot + 1)
+		waitBots.Add(1)
+		go func(idSpammer string) {
+			defer waitBots.Done()
+
+			for iRoom := range make([]struct{}, (1 + rand.Intn(nRooms))) {
+				idRoom := fmt.Sprintf("Spammed%d", 1+iRoom)
+				roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", idRoom))
+				if err = os.MkdirAll(roomDir, 0755); err != nil {
+					panic(err)
+				}
+
+				for iMsg := range make([]struct{}, (1 + rand.Intn(nMsgs))) {
+
+					chatter.gotoRoom(idRoom)
+					chatter.setNick(idSpammer)
+					chatter.say(fmt.Sprintf("This is %s giving you %d !", idSpammer, 1+iMsg))
+
+				}
+
+				for iFile := range make([]struct{}, (1 + rand.Intn(nFiles))) {
+
+					fn := fmt.Sprintf("SpamFile%d", (1 + iFile))
+					// 25% probability to do download, 75% do upload
+					doUpload := kbMax > 0 && rand.Intn(4) > 0
+					if doUpload {
+
+						// generate file if not present
+						fpth := filepath.Join(roomDir, fn)
+						if _, err := os.Stat(fpth); os.IsNotExist(err) {
+							func() {
+								// no truncate in case another spammer is racing to write the same file.
+								// concurrent writing to a same file is wrong in most but this spamming case.
+								f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
+								if err != nil {
+									panic(err)
+								}
+								defer f.Close()
+
+								kbFile := 1 + rand.Intn(kbMax)
+								if existingSize, err := f.Seek(0, 2); err != nil {
+									panic(err)
+								} else if existingSize >= 1024*int64(kbFile) {
+									// already big enough
+									return
+								}
+								if _, err := f.Seek(0, 0); err != nil { // reset to beginning for write
+									panic(err)
+								}
+
+								chunk := make([]byte, 1024) // reused 1 KB buffer
+								for range make([]struct{}, kbFile) {
+									if _, err = rand.Read(chunk); err != nil {
+										panic(err)
+									}
+									if _, err = f.Write(chunk); err != nil {
+										panic(err)
+									}
+								}
+							}()
+						}
+
+						chatter.gotoRoom(idRoom)
+						chatter.setNick(idSpammer)
+						chatter.uploadFile(idRoom, fn)
+
+					} else {
+
+						chatter.downloadFile(idRoom, fn)
+
+					}
+
+				}
+
+			}
+
+		}(fmt.Sprintf("Spammer%d", 1+iBot))
+	}
+
+	waitBots.Wait()
+	if kbMax > 0 {
+		fmt.Printf(`
+Spammed with %d bots in up to %d rooms,
+  each to speak up to %d messages,
+  and upload/download up to %d files, each up to %d KB large.
+
+`,
+			nBots, nRooms, nMsgs, nFiles, kbMax)
+	} else {
+		fmt.Printf(`
+Spammed with %d bots in up to %d rooms,
+	each to speak up to %d messages,
+	and download up to %d files.
+
+`,
+			nBots, nRooms, nMsgs, nFiles)
 	}
 }
 
@@ -663,7 +767,7 @@ func (chatter *Chatter) InRoom(roomID string) {
 func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
 	line.HidePrompt()
 	if roomMsgs.RoomID != chatter.inRoom {
-		fmt.Printf(" *** Messages from #%s ***\n", roomMsgs.RoomID)
+		fmt.Printf(" *** Messages in #%s ***\n", roomMsgs.RoomID)
 	}
 	for i := range roomMsgs.Msgs {
 		fmt.Printf("%+v\n", &roomMsgs.Msgs[i])

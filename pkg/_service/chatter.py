@@ -77,7 +77,7 @@ ShowNotice({welcome_text!r})
             )
 
         # send new comer info to other chatters already in room
-        for chatter in self.in_room.chatters:
+        for chatter in [*self.in_room.chatters]:
             await chatter.po.notif(
                 f"""
 ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
@@ -100,13 +100,13 @@ ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
 
         # leave old room
         old_room.chatters.remove(self)
-        for chatter in old_room.chatters:
+        for chatter in [*old_room.chatters]:
             await chatter.po.notif(
                 f"""
 ChatterLeft({self.nick!r}, {old_room.room_id!r})
 """
             )
-        for chatter in new_room.chatters:
+        for chatter in [*new_room.chatters]:
             await chatter.po.notif(
                 f"""
 ChatterJoined({self.nick!r}, {new_room.room_id!r})
@@ -183,7 +183,7 @@ Said({msg_id!r})
 
         fpth = os.path.join(room_dir, fn)
         try:
-            f = open(fpth, "wb")
+            f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
         except OSError:
             # failed open file for writing
             refuse_reason = traceback.print_exc()
@@ -194,6 +194,19 @@ Said({msg_id!r})
         chksum = 0
 
         try:
+
+            # check that not to shrink a file by uploading a smaller one, for file downloads in
+            # stress-test with a spammer not to fail due to file shrunk
+            f.seek(0, 2)
+            existing_fsz = f.tell()
+            if fsz < existing_fsz:
+                await co.send_obj(
+                    repr(
+                        "can only upload a file bigger than existing version on server!"
+                    )
+                )
+                return
+            f.seek(0, 0)  # reset write position to file beginning
 
             # None as refuse_reason means the upload is accepted
             await co.send_obj(None)

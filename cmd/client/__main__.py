@@ -90,6 +90,10 @@ def create_he():  # Create a hosting env reacting to chat service
         if err_reason is not None:
             logger.error(f"Error with chatting service: {err_reason!s}")
 
+        if not tui_liner.is_set():
+            # let main thread quit instead of wait for this forever
+            tui_liner.set(None)
+
     # expose standard named values for interop
     expose_interop_values(he)
 
@@ -126,12 +130,18 @@ async def do_chatting():
     except Exception:
         logger.fatal(f"Error in chatting.", exc_info=True)
 
-    if line_getter is not None and line_getter.running:
+    if not tui_liner.is_set():
+        # let main thread quit instead of wait for this forever
+        tui_liner.set(None)
+    else:
+        assert line_getter is tui_liner.val
 
-        # send a SIGINT to self, make sure a KeyboardInterrupt get caught in `line_getter.read_loop()`
-        os.kill(os.getpid(), signal.SIGINT)
+        if line_getter.running:
 
-        line_getter.stop()
+            # send a SIGINT to self, make sure a KeyboardInterrupt get caught in `line_getter.read_loop()`
+            os.kill(os.getpid(), signal.SIGINT)
+
+            line_getter.stop()
 
 
 # run coroutines in another dedicated thread, so as to spare main thread to run TUI loop
@@ -142,4 +152,5 @@ line_getter = tui_liner.get()
 
 # read line forever in main thread, this is necessary for `KeyboardInterrupt`
 # to be properly caught by the TUI loop.
-line_getter.read_loop()
+if line_getter is not None:
+    line_getter.read_loop()

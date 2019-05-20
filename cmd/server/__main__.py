@@ -84,7 +84,7 @@ def he_factory():  # Create a hosting env reacting to chat consumers
         else:
             logger.debug(f"Chatting consumer {chatter.po.remote_addr!s} disconnected.")
 
-        chatter.in_room.chatters.remove(chatter)
+        chatter.in_room.chatters.discard(chatter)
 
     # expose standard named values for interop
     expose_interop_values(he)

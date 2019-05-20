@@ -273,11 +273,25 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 
 	fpth := filepath.Join(roomDir, fn)
 
-	f, err := os.Create(fpth)
+	f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
+
+	// check that not to shrink a file by uploading a smaller one, for file downloads in
+	// stress-test with a spammer not to fail due to file shrunk
+	if existingSize, err := f.Seek(0, 2); err != nil {
+		panic(err)
+	} else if fsz < existingSize {
+		if err := co.SendObj(hbi.Repr("can only upload a file bigger than existing version on server!")); err != nil {
+			panic(err)
+		}
+		return
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		panic(err)
+	}
 
 	// these need to be accessed both inside and outside of data stream cb, define here
 	totalKB := int64(math.Ceil(float64(fsz) / 1024))
