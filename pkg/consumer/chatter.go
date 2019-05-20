@@ -165,9 +165,7 @@ SetNick(%#v)
 	// update local state and TUI, notice the new nick
 	chatter.nick = acceptedNick.(string)
 	chatter.updatePrompt()
-	line.HidePrompt()
 	fmt.Printf("Your are now known as `%s`\n", acceptedNick)
-	line.ShowPrompt()
 }
 
 func (chatter *Chatter) gotoRoom(roomID string) {
@@ -226,9 +224,6 @@ Say(%d, %d)
 }
 
 func (chatter *Chatter) listLocalFiles() {
-	line.HidePrompt()
-	defer line.ShowPrompt()
-
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-client-files/%s", chatter.inRoom))
 	if err != nil {
 		panic(err)
@@ -587,10 +582,12 @@ func (chatter *Chatter) keepChatting() {
 		} else if code[0] == '<' {
 			// download file
 			chatter.downloadFile(strings.TrimSpace(code[1:]))
+		} else if code[0] == '*' {
+			// spam the service for stress-test
+			chatter.spam(code[1:])
 		} else if code[0] == '?' {
 			// show usage
-			line.HidePrompt()
-			fmt.Println(`
+			fmt.Print(`
 Usage:
 
  # _room_
@@ -610,14 +607,36 @@ Usage:
 
  < _file-name_
     download a file
+
+ * [ _n_bots_=1 ] [ _n_rooms_=1 ] [ _n_msgs_=1 ] [ _n_files_=1 ] [ _file_max_kb_=2048 ]
+    spam the service for stress-test
+
 `)
-			line.ShowPrompt()
 		} else {
 			msg := code
 			chatter.say(msg)
 		}
 	}
 
+}
+
+func (chatter *Chatter) spam(spec string) {
+	nBots, nRooms, nMsgs, nFiles, kbMax := 1, 1, 1, 1, 2048
+	fmt.Sscanf(spec, "%d %d %d %d %d", &nBots, &nRooms, &nMsgs, &nFiles, &kbMax)
+	fmt.Printf(`
+Start spamming with %d bots in up to %d rooms,
+  each to speak up to %d messages,
+  and upload/download up to %d files, each up to %d KB large ...
+
+`,
+		nBots, nRooms, nMsgs, nFiles, kbMax)
+
+	for iBot := range make([]struct{}, nBots) {
+		go func(idSpammer int) {
+			chatter.setNick(fmt.Sprintf("Spammer%d", idSpammer))
+			chatter.say(fmt.Sprintf("This is Spammer%d !", idSpammer))
+		}(iBot + 1)
+	}
 }
 
 func (chatter *Chatter) updatePrompt() {

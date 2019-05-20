@@ -82,7 +82,7 @@ SetNick({nick!r})
         # update local state and TUI, notice the new nick
         self.nick = accepted_nick
         self._update_prompt()
-        self.line_getter.show(f"You are now known as `{self.nick}`")
+        print(f"You are now known as `{self.nick}`")
 
     async def _goto_room(self, room_id: str):
 
@@ -131,7 +131,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
     async def _list_local_files(self):
         room_dir = os.path.abspath(f"chat-client-files/{self.in_room}")
         if not os.path.isdir(room_dir):
-            self.line_getter.show(f"Making room dir [{room_dir}] ...")
+            print(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)
 
         fnl = []
@@ -147,7 +147,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
             fszkb = int(math.ceil(s.st_size / 1024))
             fnl.append(f"{fszkb:12d} KB\t{fn}")
 
-        self.line_getter.show("\n".join(fnl))
+        print("\n".join(fnl))
 
     async def _upload_file(self, fn):
         lg = self.line_getter
@@ -274,7 +274,7 @@ ListFiles({self.in_room!r})
         fil = await co.recv_obj()
 
         # show received file info list
-        self.line_getter.show(
+        print(
             "\n".join(f"{int(math.ceil(fsz / 1024)):12d} KB\t{fn}" for fsz, fn in fil)
         )
 
@@ -283,7 +283,7 @@ ListFiles({self.in_room!r})
 
         room_dir = os.path.abspath(f"chat-client-files/{self.in_room}")
         if not os.path.isdir(room_dir):
-            self.line_getter.show(f"Making room dir [{room_dir}] ...")
+            print(f"Making room dir [{room_dir}] ...")
             os.makedirs(room_dir, exist_ok=True)
 
         async with self.po.co() as co:  # start a new posting conversation
@@ -403,7 +403,7 @@ SendFile({self.in_room!r}, {fn!r})
                     await self._download_file(fn)
                 elif sl[0] == "?":
                     # show usage
-                    self.line_getter.show(
+                    print(
                         rf"""
 Usage:
 
