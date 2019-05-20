@@ -13,7 +13,7 @@
             },
             "program": "${workspaceFolder}/cmd/server-tw",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {
@@ -28,7 +28,7 @@
             },
             "program": "${workspaceFolder}/cmd/client-tw",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {
@@ -41,7 +41,7 @@
             },
             "program": "${workspaceFolder}/cmd/server",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {
@@ -55,7 +55,7 @@
             },
             "program": "${workspaceFolder}/cmd/client",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {
@@ -120,7 +120,7 @@
             },
             "program": "${workspaceFolder}/cmd/hello/server",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {
@@ -133,7 +133,7 @@
             },
             "program": "${workspaceFolder}/cmd/hello/client",
             "args": [
-                "-v=3"
+                // "-v=3"
             ]
         },
         {

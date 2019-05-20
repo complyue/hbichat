@@ -51,7 +51,8 @@ RoomMsgs({room_msgs!r})
         stale_chatters = set()
         # no await in the loop, no need to snapshot the set
         for chatter in self.chatters:
-            if chatter is from_chatter:  # no need to notify the OP about content
+            if chatter is from_chatter:
+                # starting a new po co with a ho co open will deadlock, make great sure to avoid that
                 continue
             try:
                 # spawn the notification coroutine so the posting chatter's hosting conversation (which is

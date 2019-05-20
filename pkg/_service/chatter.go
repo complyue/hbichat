@@ -124,14 +124,10 @@ ShowNotice(%#v)
 
 	// send new comer info to other chatters already in room
 	func() {
-		// add this chatter into its 1st room
-		chatter.inRoom.Lock()
-		chatter.inRoom.chatters[chatter] = struct{}{}
-		chatter.inRoom.Unlock()
-
 		for otherChatter := range chatter.inRoom.chatters {
 			if otherChatter == chatter {
-				continue // don't notify self
+				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
+				continue
 			}
 			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
@@ -139,6 +135,11 @@ ChatterJoined(%#v, %#v)
 				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
 			}
 		}
+
+		// add this chatter into its 1st room
+		chatter.inRoom.Lock()
+		chatter.inRoom.chatters[chatter] = struct{}{}
+		chatter.inRoom.Unlock()
 	}()
 }
 
@@ -162,33 +163,13 @@ func (chatter *Chatter) GotoRoom(roomID string) {
 	oldRoom := chatter.inRoom
 	newRoom := prepareRoom(roomID)
 
-	func() { // leave old room
-		oldRoom.Lock()
-		delete(oldRoom.chatters, chatter)
-		oldRoom.Unlock()
-
-		for otherChatter := range oldRoom.chatters {
-			if err := otherChatter.po.Notif(fmt.Sprintf(`
-ChatterLeft(%#v, %#v)
-`, chatter.nick, oldRoom.roomID)); err != nil {
-				glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
-			}
-		}
-	}()
-
-	func() { // enter new room
-		for otherChatter := range newRoom.chatters {
-			if err := otherChatter.po.Notif(fmt.Sprintf(`
-ChatterJoined(%#v, %#v)
-`, chatter.nick, newRoom.roomID)); err != nil {
-				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
-			}
-		}
-
-		newRoom.Lock()
-		newRoom.chatters[chatter] = struct{}{}
-		newRoom.Unlock()
-	}()
+	// leave old room, enter new room. writes should be sync'ed properly
+	oldRoom.Lock()
+	delete(oldRoom.chatters, chatter)
+	oldRoom.Unlock()
+	newRoom.Lock()
+	newRoom.chatters[chatter] = struct{}{}
+	newRoom.Unlock()
 
 	// change record state
 	chatter.mu.Lock()
@@ -209,6 +190,36 @@ RoomMsgs(%#v)
 		panic(err)
 	}
 
+	go func() { // send notification to others in a separated goroutine to avoid deadlock,
+		// which is possible when 2 ho co happens need to create po co to eachother.
+
+		// use cached map entries of current thread for notification,
+		// don't care that much for new comers not seeing or ones already left seeing the msg.
+		for otherChatter := range oldRoom.chatters {
+			if otherChatter == chatter {
+				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
+				continue
+			}
+			if err := otherChatter.po.Notif(fmt.Sprintf(`
+ChatterLeft(%#v, %#v)
+`, chatter.nick, oldRoom.roomID)); err != nil {
+				glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
+			}
+		}
+		// use cached map entries of current thread for notification,
+		// don't care that much for new comers not seeing or ones already left seeing the msg.
+		for otherChatter := range newRoom.chatters {
+			if otherChatter == chatter {
+				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
+				continue
+			}
+			if err := otherChatter.po.Notif(fmt.Sprintf(`
+ChatterJoined(%#v, %#v)
+`, chatter.nick, newRoom.roomID)); err != nil {
+				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
+			}
+		}
+	}()
 }
 
 // Say showcase a service method with binary payload, that to be received from

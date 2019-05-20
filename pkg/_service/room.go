@@ -82,16 +82,20 @@ func (room *Room) Post(from *Chatter, content string) {
 		}
 	}()
 
-	notifOut := &ds.MsgsInRoom{room.roomID, []ds.Msg{*msg}}
-	notifCode := fmt.Sprintf(`
+	go func() { // send notification to others in a separated goroutine to avoid deadlock,
+		// which is possible when 2 ho co happens need to create po co to eachother.
+
+		notifOut := &ds.MsgsInRoom{room.roomID, []ds.Msg{*msg}}
+		notifCode := fmt.Sprintf(`
 RoomMsgs(%#v)
 `, notifOut)
-	for _, chatter := range chatters {
-		if chatter == from {
-			continue // don't send msg to self
+		for _, chatter := range chatters {
+			if chatter == from {
+				continue
+			}
+			if err := chatter.po.Notif(notifCode); err != nil {
+				glog.Errorf("Failed delivering msg to consumer %s - %+v", chatter.po.RemoteAddr(), err)
+			}
 		}
-		if err := chatter.po.Notif(notifCode); err != nil {
-			glog.Errorf("Failed delivering msg to consumer %s - %+v", chatter.po.RemoteAddr(), err)
-		}
-	}
+	}()
 }

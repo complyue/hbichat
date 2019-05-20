@@ -78,6 +78,9 @@ ShowNotice({welcome_text!r})
 
         # send new comer info to other chatters already in room
         for chatter in [*self.in_room.chatters]:
+            if chatter is self:
+                # starting a new po co with a ho co open will deadlock, make great sure to avoid that
+                continue
             await chatter.po.notif(
                 f"""
 ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
@@ -98,24 +101,12 @@ ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
         old_room = self.in_room
         new_room = prepare_room(str(room_id).strip())
 
-        # leave old room
-        old_room.chatters.remove(self)
-        for chatter in [*old_room.chatters]:
-            await chatter.po.notif(
-                f"""
-ChatterLeft({self.nick!r}, {old_room.room_id!r})
-"""
-            )
-        for chatter in [*new_room.chatters]:
-            await chatter.po.notif(
-                f"""
-ChatterJoined({self.nick!r}, {new_room.room_id!r})
-"""
-            )
-
-        # enter new room
-        self.in_room = new_room
+        # leave old room, enter new room
+        old_room.chatters.discard(self)
         new_room.chatters.add(self)
+        # change record state
+        self.in_room = new_room
+
         welcome_lines = [
             f"""
 @@ You are in #{new_room.room_id!s} now, {len(new_room.chatters)} chatter(s).
@@ -132,6 +123,38 @@ ShowNotice({welcome_text!r})
 RoomMsgs({room_msgs!r})
 """
         )
+
+        async def notif_others():  # send notification to others in a separated coroutine to avoid deadlock,
+            # which is possible when 2 ho co happens need to create po co to eachother.
+
+            for chatter in [
+                # as to await sth during the loop, snapshot the chatters set here,
+                # or concurrent modification to the set will raise error to this loop.
+                *old_room.chatters
+            ]:
+                if chatter is self:
+                    # starting a new po co with a ho co open will deadlock, make great sure to avoid that
+                    continue
+                await chatter.po.notif(
+                    f"""
+ChatterLeft({self.nick!r}, {old_room.room_id!r})
+"""
+                )
+            for chatter in [
+                # as to await sth during the loop, snapshot the chatters set here,
+                # or concurrent modification to the set will raise error to this loop.
+                *new_room.chatters
+            ]:
+                if chatter is self:
+                    # starting a new po co with a ho co open will deadlock, make great sure to avoid that
+                    continue
+                await chatter.po.notif(
+                    f"""
+ChatterJoined({self.nick!r}, {new_room.room_id!r})
+"""
+                )
+
+        asyncio.create_task(notif_others())
 
     # showcase a service method with binary payload, that to be received from
     # current hosting conversation
