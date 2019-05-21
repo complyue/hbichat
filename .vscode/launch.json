@@ -39,9 +39,10 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
+            "cwd": "/Volumes/RamDisk",
             "program": "${workspaceFolder}/cmd/server",
             "args": [
-                // "-v=3"
+                "-v=3"
             ]
         },
         {
@@ -53,6 +54,7 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
+            "cwd": "/Volumes/RamDisk",
             "program": "${workspaceFolder}/cmd/client",
             "args": [
                 // "-v=3"
@@ -66,7 +68,7 @@
                 "HBI_LOG_LEVEL": "DEBUG",
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
-            "cwd": "${workspaceFolder}",
+            "cwd": "/Volumes/RamDisk",
             "module": "hbichat.cmd.server",
             "args": [],
             "console": "integratedTerminal"
@@ -79,7 +81,7 @@
                 "HBI_LOG_LEVEL": "DEBUG",
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
-            "cwd": "${workspaceFolder}",
+            "cwd": "/Volumes/RamDisk",
             "module": "hbichat.cmd.client",
             "args": [],
             "console": "integratedTerminal"
@@ -118,6 +120,7 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
+            "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/hello/server",
             "args": [
                 // "-v=3"
@@ -131,6 +134,7 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
+            "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/cmd/hello/client",
             "args": [
                 // "-v=3"
