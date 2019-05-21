@@ -123,12 +123,12 @@ ShowNotice(%#v)
 		}
 	}()
 
-	// send new comer info to other chatters already in room
-	func() {
-		for otherChatter := range chatter.inRoom.chatters {
+	go func() { // send notification to others in a separated goroutine to avoid deadlock,
+		// which is possible when 2 ho co happens need to create po co to eachother.
+
+		for _, otherChatter := range chatter.inRoom.chatterList() {
 			if otherChatter == chatter {
-				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
-				continue
+				continue // don't notif him/her self
 			}
 			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
@@ -136,12 +136,12 @@ ChatterJoined(%#v, %#v)
 				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
 			}
 		}
-
-		// add this chatter into its 1st room
-		chatter.inRoom.Lock()
-		chatter.inRoom.chatters[chatter] = struct{}{}
-		chatter.inRoom.Unlock()
 	}()
+
+	// add this chatter into its 1st room
+	chatter.inRoom.Lock()
+	chatter.inRoom.chatters[chatter] = struct{}{}
+	chatter.inRoom.Unlock()
 }
 
 func (chatter *Chatter) SetNick(nick string) {
@@ -194,12 +194,9 @@ RoomMsgs(%#v)
 	go func() { // send notification to others in a separated goroutine to avoid deadlock,
 		// which is possible when 2 ho co happens need to create po co to eachother.
 
-		// use cached map entries of current thread for notification,
-		// don't care that much for new comers not seeing or ones already left seeing the msg.
-		for otherChatter := range oldRoom.chatters {
+		for _, otherChatter := range oldRoom.chatterList() {
 			if otherChatter == chatter {
-				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
-				continue
+				continue // skip him/her self
 			}
 			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterLeft(%#v, %#v)
@@ -207,12 +204,9 @@ ChatterLeft(%#v, %#v)
 				glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
 			}
 		}
-		// use cached map entries of current thread for notification,
-		// don't care that much for new comers not seeing or ones already left seeing the msg.
-		for otherChatter := range newRoom.chatters {
+		for _, otherChatter := range newRoom.chatterList() {
 			if otherChatter == chatter {
-				// starting a new po co with a ho co open will deadlock, make great sure to avoid that
-				continue
+				continue // skip him/her self
 			}
 			if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
@@ -249,14 +243,14 @@ Said(%d)
 func (chatter *Chatter) UploadReq(roomID string, fn string, fsz int64) {
 	co := chatter.ho.Co()
 
-	if fsz > 50*1024*1024 { // 50 MB at most
+	if fsz > 200*1024*1024 { // 200 MB at most
 		// send the reason as string, why it's refused
 		if err := co.SendObj(hbi.Repr("file too large!")); err != nil {
 			panic(err)
 		}
 		return
 	}
-	if fsz < 20*1024 { // 20 MB at least
+	if fsz < 2*1024 { // 2 KB at least
 		// send the reason as string, why it's refused
 		if err := co.SendObj(hbi.Repr("file too small!")); err != nil {
 			panic(err)
@@ -327,7 +321,7 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 		panic(err)
 	}
 
-	//send back chksum for client to verify
+	// send back chksum for client to verify
 	if err = co.SendObj(hbi.Repr(chksum)); err != nil {
 		panic(err)
 	}

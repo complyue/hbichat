@@ -46,6 +46,18 @@ func NewRoom(roomID string) *Room {
 	}
 }
 
+// snapshot current chatter list
+func (room *Room) chatterList() []*Chatter {
+	room.Lock()
+	defer room.Unlock()
+
+	chatters := make([]*Chatter, 0, len(room.chatters))
+	for chatter := range room.chatters {
+		chatters = append(chatters, chatter)
+	}
+	return chatters
+}
+
 func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 	room.Lock()
 	defer room.Unlock()
@@ -60,7 +72,7 @@ func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 
 func (room *Room) Post(from *Chatter, content string) {
 	var msg *ds.Msg
-	var chatters []*Chatter
+	chatters := room.chatterList()
 
 	func() {
 		room.Lock()
@@ -74,12 +86,6 @@ func (room *Room) Post(from *Chatter, content string) {
 		msg = &room.msgs[len(room.msgs)-1]
 		// invalidate log cache
 		room.cachedMsgLog = nil
-
-		// snapshot the chatter list while room still locked
-		chatters = make([]*Chatter, 0, len(room.chatters))
-		for chatter := range room.chatters {
-			chatters = append(chatters, chatter)
-		}
 	}()
 
 	go func() { // send notification to others in a separated goroutine to avoid deadlock,
@@ -91,7 +97,7 @@ RoomMsgs(%#v)
 `, notifOut)
 		for _, chatter := range chatters {
 			if chatter == from {
-				continue
+				continue // don't notif the OP
 			}
 			if err := chatter.po.Notif(notifCode); err != nil {
 				glog.Errorf("Failed delivering msg to consumer %s - %+v", chatter.po.RemoteAddr(), err)

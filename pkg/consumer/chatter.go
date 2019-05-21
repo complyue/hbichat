@@ -275,7 +275,8 @@ func (chatter *Chatter) uploadFile(roomID, fn string) {
 
 	f, err := os.Open(fpth)
 	if err != nil {
-		panic(err)
+		fmt.Printf("File not readable: [%s]\n", fpth)
+		return
 	}
 	defer f.Close()
 	// get file data size
@@ -616,7 +617,7 @@ Usage:
  < _file-name_
     download a file
 
- * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ]
+ * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
     spam the service for stress-test
 
 `)
@@ -629,16 +630,22 @@ Usage:
 }
 
 func (chatter *Chatter) spam(spec string) {
-	nBots, nRooms, nMsgs, nFiles, kbMax := 10, 10, 10, 10, 1234
-	fmt.Sscanf(spec, "%d %d %d %d %d", &nBots, &nRooms, &nMsgs, &nFiles, &kbMax)
+	nBots, nRooms, nMsgs, nFiles, kbMax, kbMin := 10, 10, 10, 10, 1234, 2
+	fmt.Sscanf(spec, "%d %d %d %d %d %d", &nBots, &nRooms, &nMsgs, &nFiles, &kbMax, &kbMin)
 	if kbMax > 0 {
+		if kbMin > kbMax {
+			kbMin = kbMax
+		}
+		if kbMin < 1 {
+			kbMin = 1
+		}
 		fmt.Printf(`
 Start spamming with %d bots in up to %d rooms,
   each to speak up to %d messages,
-  and upload/download up to %d files, each up to %d KB large ...
+  and upload/download up to %d files, each %d ~ %d KB large ...
 
 `,
-			nBots, nRooms, nMsgs, nFiles, kbMax)
+			nBots, nRooms, nMsgs, nFiles, kbMin, kbMax)
 	} else {
 		fmt.Printf(`
 Start spamming with %d bots in up to %d rooms,
@@ -678,41 +685,39 @@ Start spamming with %d bots in up to %d rooms,
 					doUpload := kbMax > 0 && rand.Intn(4) > 0
 					if doUpload {
 
-						// generate file if not present
+						// fill file with random data if not present or not big enough
+						kbFile := kbMin + rand.Intn(1+kbMax-kbMin)
 						fpth := filepath.Join(roomDir, fn)
-						if _, err := os.Stat(fpth); os.IsNotExist(err) {
-							func() {
-								// no truncate in case another spammer is racing to write the same file.
-								// concurrent writing to a same file is wrong in most real world cases,
-								// but here we're just spamming ...
-								f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
-								if err != nil {
-									panic(err)
-								}
-								defer f.Close()
+						func() {
+							// no truncate in case another spammer is racing to write the same file.
+							// concurrent writing to a same file is wrong in most real world cases,
+							// but here we're just spamming ...
+							f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
+							if err != nil {
+								panic(err)
+							}
+							defer f.Close()
 
-								kbFile := 1 + rand.Intn(kbMax)
-								if existingSize, err := f.Seek(0, 2); err != nil {
-									panic(err)
-								} else if existingSize >= 1024*int64(kbFile) {
-									// already big enough
-									return
-								}
-								if _, err := f.Seek(0, 0); err != nil { // reset to beginning for write
-									panic(err)
-								}
+							if existingSize, err := f.Seek(0, 2); err != nil {
+								panic(err)
+							} else if existingSize >= 1024*int64(kbFile) {
+								// already big enough
+								return
+							}
+							if _, err := f.Seek(0, 0); err != nil { // reset to beginning for write
+								panic(err)
+							}
 
-								chunk := make([]byte, 1024) // reused 1 KB buffer
-								for range make([]struct{}, kbFile) {
-									if _, err = rand.Read(chunk); err != nil {
-										panic(err)
-									}
-									if _, err = f.Write(chunk); err != nil {
-										panic(err)
-									}
+							chunk := make([]byte, 1024) // reused 1 KB buffer
+							for range make([]struct{}, kbFile) {
+								if _, err = rand.Read(chunk); err != nil {
+									panic(err)
 								}
-							}()
-						}
+								if _, err = f.Write(chunk); err != nil {
+									panic(err)
+								}
+							}
+						}()
 
 						chatter.gotoRoom(idRoom)
 						chatter.setNick(idSpammer)
@@ -736,10 +741,10 @@ Start spamming with %d bots in up to %d rooms,
 		fmt.Printf(`
 Spammed with %d bots in up to %d rooms,
   each to speak up to %d messages,
-  and upload/download up to %d files, each up to %d KB large.
+  and upload/download up to %d files, each %d ~ %d KB large.
 
 `,
-			nBots, nRooms, nMsgs, nFiles, kbMax)
+			nBots, nRooms, nMsgs, nFiles, kbMin, kbMax)
 	} else {
 		fmt.Printf(`
 Spammed with %d bots in up to %d rooms,
