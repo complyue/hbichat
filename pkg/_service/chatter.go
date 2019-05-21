@@ -86,6 +86,7 @@ func (chatter *Chatter) NamesToExpose() []string {
 		"SetNick",
 		"GotoRoom",
 		"Say",
+		"UploadReq",
 		"RecvFile",
 		"ListFiles",
 		"SendFile",
@@ -245,19 +246,8 @@ Said(%d)
 
 }
 
-func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
+func (chatter *Chatter) UploadReq(roomID string, fn string, fsz int64) {
 	co := chatter.ho.Co()
-
-	// the implemented solution here is very anti-throughput,
-	// the wire is hogged by this conversation for a full network roundtrip,
-	// the pipeline will be drained due to blocking wait.
-	//
-	// but for demonstration purpose, this solution can get the job done at least.
-	//
-	// a better solution, that's throughput-wise, should be the client submiting an upload
-	// intent, and if the service accepts the meta info, it then opens a posting conversation
-	// from server side, requests the hosting endpoint of the client to do upload; or in
-	// the other case, notify the reason why it's not accepted.
 
 	if fsz > 50*1024*1024 { // 50 MB at most
 		// send the reason as string, why it's refused
@@ -274,6 +264,17 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 		return
 	}
 
+	// nil as refuse_reason means the upload is accepted
+	if err := co.SendObj("nil"); err != nil {
+		panic(err)
+	}
+}
+
+func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
+	// TODO in a real world application, the same validation rules as in UploadReq()
+	// should be checked again, or it's a security hole that a consumer can exploit.
+	co := chatter.ho.Co()
+
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
 	if err != nil {
 		panic(err)
@@ -284,34 +285,18 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 
 	fpth := filepath.Join(roomDir, fn)
 
-	f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
+	// unlink the file before creating a new one, so if someone has opened it for
+	// download, that can finish normally.
+	os.Remove(fpth)
+	f, err := os.Create(fpth)
 	if err != nil {
 		panic(err)
 	}
 	defer f.Close()
 
-	// check that not to shrink a file by uploading a smaller one, for file downloads in
-	// stress-test with a spammer not to fail due to file shrunk
-	if existingSize, err := f.Seek(0, 2); err != nil {
-		panic(err)
-	} else if fsz < existingSize {
-		if err := co.SendObj(hbi.Repr("can only upload a file bigger than existing version on server!")); err != nil {
-			panic(err)
-		}
-		return
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		panic(err)
-	}
-
 	// these need to be accessed both inside and outside of data stream cb, define here
 	totalKB := int64(math.Ceil(float64(fsz) / 1024))
 	var chksum uint32
-
-	// nil as refuse_reason means the upload is accepted
-	if err = co.SendObj("nil"); err != nil {
-		panic(err)
-	}
 
 	// recv data with one 1-KB-chunk at max at a time.
 	bytesRemain := fsz

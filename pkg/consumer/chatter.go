@@ -284,6 +284,31 @@ func (chatter *Chatter) uploadFile(roomID, fn string) {
 		panic(err)
 	}
 
+	// start a new posting conversation for upload request
+	co, err := chatter.po.NewCo()
+	if err != nil {
+		panic(err)
+	}
+	func() {
+		defer co.Close() // close this po co for sure, on leaving this one-off func
+
+		// submit an upload request
+		if err = co.SendCode(
+			fmt.Sprintf(`
+UploadReq(%#v, %#v, %d)
+`, roomID, fn, fsz)); err != nil {
+			panic(err)
+		}
+	}()
+
+	// after the co closed,  i.e. in its `recv` phase, receive upload confirmation
+	if refuseReason, err := co.RecvObj(); err != nil {
+		panic(err)
+	} else if refuseReason != nil {
+		fmt.Printf("Server refused the upload: %s\n", refuseReason)
+		return
+	}
+
 	// prepare to send file data from beginning, calculate checksum by the way
 	if _, err = f.Seek(0, 0); err != nil {
 		panic(err)
@@ -295,12 +320,11 @@ func (chatter *Chatter) uploadFile(roomID, fn string) {
 	totalKB := int64(math.Ceil(float64(fsz) / 1024))
 	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
 
-	// start a new posting conversation
-	co, err := chatter.po.NewCo()
+	// start another posting conversation for file data upload
+	co, err = chatter.po.NewCo()
 	if err != nil {
 		panic(err)
 	}
-	uploadAccepted := false
 	func() {
 		defer co.Close() // close this po co for sure, on leaving this one-off func
 
@@ -312,25 +336,6 @@ RecvFile(%#v, %#v, %d)
 			panic(err)
 		}
 
-		// the implemented solution here is very anti-throughput,
-		// the wire is hogged by this conversation for a full network roundtrip,
-		// the pipeline will be drained due to blocking wait.
-		//
-		// but for demonstration purpose, this solution can get the job done at least.
-		//
-		// a better solution, that's throughput-wise, should be the client submiting an upload
-		// intent, and if the service accepts the meta info, it then opens a posting conversation
-		// from server side, requests the hosting endpoint of the client to do upload; or in
-		// the other case, notify the reason why it's not accepted.
-		if refuseReason, err := co.RecvObj(); err != nil {
-			panic(err)
-		} else if refuseReason != nil {
-			fmt.Printf("Server refused the upload: %s\n", refuseReason)
-			return
-		}
-
-		// upload accepted, proceed to upload file data
-		uploadAccepted = true
 		startTime = time.Now()
 
 		// nothing prevents the file from growing as we're sending, we only send
@@ -371,12 +376,9 @@ RecvFile(%#v, %#v, %d)
 			return
 		}
 	}()
-	if !uploadAccepted {
-		return
-	}
 
-	// receive response AFTER the posting conversation closed,
-	// this is crucial for overall throughput.
+	// after the co closed,  i.e. in its `recv` phase, receive the checksum calculated
+	// as peer received the data stream.
 	peerChksum, err := co.RecvObj()
 	if err != nil {
 		panic(err)
@@ -384,7 +386,9 @@ RecvFile(%#v, %#v, %d)
 	elapsed := time.Since(startTime)
 	fmt.Printf( // overwrite line above
 		"\x1B[1A\r\x1B[0K All %d KB uploaded in %v\n", totalKB, elapsed)
-	// validate chksum calculated at peer side as it had all data received
+	// validate chksum calculated at peer side against ours.
+	// use hex string form so don't depend on its exact type (int64 or int etc.) as Anko
+	// interpreted it.
 	if fmt.Sprintf("%x", peerChksum) != fmt.Sprintf("%x", chksum) {
 		fmt.Printf("@*@ But checksum mismatch %x vs %x !?!\n", peerChksum, chksum)
 	} else {
@@ -472,6 +476,9 @@ SendFile(%#v, %#v)
 	}
 
 	fpth := filepath.Join(roomDir, fn)
+	// unlink the file before creating a new one, so if someone has opened it for
+	// upload, that can finish normally.
+	os.Remove(fpth)
 	f, err := os.Create(fpth)
 	if err != nil {
 		panic(err)
@@ -676,7 +683,8 @@ Start spamming with %d bots in up to %d rooms,
 						if _, err := os.Stat(fpth); os.IsNotExist(err) {
 							func() {
 								// no truncate in case another spammer is racing to write the same file.
-								// concurrent writing to a same file is wrong in most but this spamming case.
+								// concurrent writing to a same file is wrong in most real world cases,
+								// but here we're just spamming ...
 								f, err := os.OpenFile(fpth, os.O_RDWR|os.O_CREATE, 0666)
 								if err != nil {
 									panic(err)
