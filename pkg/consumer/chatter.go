@@ -302,7 +302,7 @@ UploadReq(%#v, %#v, %d)
 		}
 	}()
 
-	// after the co closed,  i.e. in its `recv` phase, receive upload confirmation
+	// after the co closed,  i.e. in its `recv` stage, receive upload confirmation
 	if refuseReason, err := co.RecvObj(); err != nil {
 		panic(err)
 	} else if refuseReason != nil {
@@ -378,7 +378,7 @@ RecvFile(%#v, %#v, %d)
 		}
 	}()
 
-	// after the co closed,  i.e. in its `recv` phase, receive the checksum calculated
+	// after the co closed,  i.e. in its `recv` stage, receive the checksum calculated
 	// as peer received the data stream.
 	peerChksum, err := co.RecvObj()
 	if err != nil {
