@@ -1,12 +1,25 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
 
 	"github.com/complyue/hbi"
+	"github.com/golang/glog"
 )
 
+func init() {
+	// change glog default destination to stderr
+	if glog.V(0) { // should always be true, mention glog so it defines its flags before we change them
+		if err := flag.CommandLine.Set("logtostderr", "true"); nil != err {
+			log.Printf("Failed changing glog default desitination, err: %s", err)
+		}
+	}
+}
+
 func main() {
+	flag.Parse()
 
 	he := hbi.NewHostingEnv()
 
@@ -22,8 +35,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
 	func() {
-		defer co.Close()
+		defer co.StartRecv()
 
 		if err = co.SendCode(`
 my_name = "Nick"
@@ -38,4 +52,6 @@ hello()
 		panic(err)
 	}
 	fmt.Println(msgBack)
+
+	co.Close()
 }

@@ -1,13 +1,26 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"log"
 	"net"
 
 	"github.com/complyue/hbi"
+	"github.com/golang/glog"
 )
 
+func init() {
+	// change glog default destination to stderr
+	if glog.V(0) { // should always be true, mention glog so it defines its flags before we change them
+		if err := flag.CommandLine.Set("logtostderr", "true"); nil != err {
+			log.Printf("Failed changing glog default desitination, err: %s", err)
+		}
+	}
+}
+
 func main() {
+	flag.Parse()
 
 	hbi.ServeTCP("localhost:3232", func() *hbi.HostingEnv {
 		he := hbi.NewHostingEnv()
@@ -20,7 +33,11 @@ print("Hello, HBI world!")
 			})
 
 		he.ExposeFunction("hello", func() {
-			if err := he.Ho().Co().SendObj(hbi.Repr(fmt.Sprintf(
+			co := he.Ho().Co()
+			if err := co.StartSend(); err != nil {
+				panic(err)
+			}
+			if err := co.SendObj(hbi.Repr(fmt.Sprintf(
 				`Hello, %s from %s!`,
 				he.Get("my_name"), he.Po().RemoteAddr(),
 			))); err != nil {
