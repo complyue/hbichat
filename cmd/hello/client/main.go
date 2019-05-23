@@ -35,23 +35,20 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer co.Close()
 
-	func() {
-		defer co.StartRecv()
-
-		if err = co.SendCode(`
+	if err = co.SendCode(`
 my_name = "Nick"
 hello()	
 `); err != nil {
-			panic(err)
-		}
-	}()
+		panic(err)
+	}
+
+	co.StartRecv()
 
 	msgBack, err := co.RecvObj()
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(msgBack)
-
-	co.Close()
 }
