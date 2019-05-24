@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/complyue/hbi"
@@ -585,6 +586,10 @@ func (chatter *Chatter) keepChatting() {
 		} else if code[0] == '*' {
 			// spam the service for stress-test
 			chatter.spam(code[1:])
+		} else if code[0] == '!' {
+			// send self a quit signal to dump stacktrace of all goroutines
+			// as stdin is being read, Ctrl^\ won't do the job
+			syscall.Kill(syscall.Getpid(), syscall.SIGQUIT)
 		} else if code[0] == '?' {
 			// show usage
 			fmt.Print(`
@@ -607,6 +612,9 @@ Usage:
 
  < _file-name_
     download a file
+
+! 
+	quit with stacktraces of all goroutines dumped
 
  * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
     spam the service for stress-test
@@ -753,9 +761,6 @@ func (chatter *Chatter) updatePrompt() {
 }
 
 func (chatter *Chatter) NickChanged(nick string) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
 
@@ -764,9 +769,6 @@ func (chatter *Chatter) NickChanged(nick string) {
 }
 
 func (chatter *Chatter) InRoom(roomID string) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
 
@@ -775,9 +777,6 @@ func (chatter *Chatter) InRoom(roomID string) {
 }
 
 func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	line.HidePrompt()
 	if roomMsgs.RoomID != chatter.inRoom {
 		fmt.Printf(" *** Messages in #%s ***\n", roomMsgs.RoomID)
@@ -789,9 +788,6 @@ func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
 }
 
 func (chatter *Chatter) Said(msgID int) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	chatter.mu.Lock()
 	msg := chatter.sentMsgs[msgID]
 	chatter.sentMsgs[msgID] = ""
@@ -803,27 +799,18 @@ func (chatter *Chatter) Said(msgID int) {
 }
 
 func (chatter *Chatter) ShowNotice(text string) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	line.HidePrompt()
 	fmt.Println(text)
 	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterJoined(nick string, roomID string) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	line.HidePrompt()
 	fmt.Printf("@@ %s has joined #%s\n", nick, roomID)
 	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterLeft(nick string, roomID string) {
-	// nothing to recv and send, close ho co immediately
-	chatter.ho.Co().Close()
-
 	line.HidePrompt()
 	fmt.Printf("@@ %s has left #%s\n", nick, roomID)
 	line.ShowPrompt()
