@@ -677,7 +677,7 @@ Start spamming with %d bots in up to %d rooms,
 
 				}
 
-				for iFile := range make([]struct{}, (1 + rand.Intn(nFiles))) {
+				for iFile := 1 + rand.Intn(nFiles); iFile > 0; iFile-- {
 
 					fn := fmt.Sprintf("SpamFile%d", (1 + iFile))
 					// 25% probability to do download, 75% do upload
