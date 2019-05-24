@@ -94,6 +94,7 @@ func (chatter *Chatter) NamesToExpose() []string {
 }
 
 func (chatter *Chatter) welcomeChatter() {
+	nick := chatter.nick // snapshot the value to avoid dirty reads in following goroutines
 
 	func() { // send welcome notice to new comer
 		co, err := chatter.po.NewCo()
@@ -107,7 +108,7 @@ func (chatter *Chatter) welcomeChatter() {
 @@ Welcome %s, this is chat service at %s !
  -
 @@ There're %d room(s) open, and you are in #%s now.
-`, chatter.nick, chatter.ho.LocalAddr(), len(rooms), chatter.inRoom.roomID))
+`, nick, chatter.ho.LocalAddr(), len(rooms), chatter.inRoom.roomID))
 		for roomID, room := range rooms {
 			room.Lock()
 			nchatters := len(room.chatters)
@@ -118,7 +119,7 @@ func (chatter *Chatter) welcomeChatter() {
 NickChanged(%#v)
 InRoom(%#v)
 ShowNotice(%#v)
-`, chatter.nick, chatter.inRoom.roomID, welcomeText.String())); err != nil {
+`, nick, chatter.inRoom.roomID, welcomeText.String())); err != nil {
 			panic(err)
 		}
 	}()
@@ -135,7 +136,7 @@ ShowNotice(%#v)
 		}
 		if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
-`, chatter.nick, chatter.inRoom.roomID)); err != nil {
+`, nick, chatter.inRoom.roomID)); err != nil {
 			glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
 			return err
 		}
@@ -186,6 +187,7 @@ func (chatter *Chatter) GotoRoom(roomID string) {
 	// change record state
 	chatter.mu.Lock()
 	chatter.inRoom = newRoom
+	nick := chatter.nick
 	chatter.mu.Unlock()
 
 	// send feedback
@@ -209,7 +211,7 @@ RoomMsgs(%#v)
 		}
 		if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterLeft(%#v, %#v)
-`, chatter.nick, oldRoom.roomID)); err != nil {
+`, nick, oldRoom.roomID)); err != nil {
 			glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
 			return err
 		}
@@ -221,7 +223,7 @@ ChatterLeft(%#v, %#v)
 		}
 		if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
-`, chatter.nick, newRoom.roomID)); err != nil {
+`, nick, newRoom.roomID)); err != nil {
 			glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
 			return err
 		}
