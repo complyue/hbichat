@@ -172,6 +172,8 @@ GotoRoom(%#v)
 }
 
 func (chatter *Chatter) say(msg string) {
+	chatter.mu.Lock()
+	defer chatter.mu.Unlock()
 
 	// showcase the idiomatic HBI way of (asynchronous) service call, with binary data
 	// data following its `receiving-code`, together posted to the service for landing.
@@ -190,13 +192,9 @@ func (chatter *Chatter) say(msg string) {
 	}
 	if msgID < 0 { // extend a new slot for this pending message
 		msgID = len(chatter.sentMsgs)
-		chatter.mu.Lock()
 		chatter.sentMsgs = append(chatter.sentMsgs, msg)
-		chatter.mu.Unlock()
 	} else {
-		chatter.mu.Lock()
 		chatter.sentMsgs[msgID] = msg
-		chatter.mu.Unlock()
 	}
 
 	// prepare binary data
