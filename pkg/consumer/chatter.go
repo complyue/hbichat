@@ -126,42 +126,26 @@ func (chatter *Chatter) setNick(nick string) {
 	if err != nil {
 		panic(err)
 	}
-	func() { // this one-off, immediately-called, anonymous function, programs the
-		// `posting stage` of co - a `posting conversation`
+	defer co.Close()
 
-		defer co.Close() // close this po co for sure, on leaving this one-off func
-
-		// during the posting stage, send out the nick change request:
-		if err = co.SendCode(
-			fmt.Sprintf(`
+	// during the posting stage, send out the nick change request:
+	if err = co.SendCode(
+		fmt.Sprintf(`
 SetNick(%#v)
 `, nick)); err != nil {
-			panic(err)
-		}
+		panic(err)
+	}
 
-		// close the posting conversation as soon as all requests are sent,
-		// so the wire is released immediately, for rest posting conversaions to start off,
-		// with RTT between requests eliminated.
-	}()
+	// transit the posting conversaion to `recv` stage a.s.a.p.
+	if err = co.StartRecv(); err != nil {
+		panic(err)
+	}
 
-	// once closed, this posting conversation enters `after-posting stage`,
-	// a closed po co can do NO sending anymore, but the receiving of response, as in the
-	// classic pattern, needs to be received and processed.
-
-	// execution of current goroutine is actually suspended during `co.RecvObj()`, until
-	// the inbound payload matching `co.CoSeq()` appears on the wire, at which time that
-	// payload will be `landed` and the land result will be returned by `co.RecvObj()`.
-	// before that, the wire should be busy off loading inbound data corresponding to
-	// previous conversations, either posting ones initiated by local peer, or hosting
-	// ones triggered by remote peer.
-
-	// receive response within `after-posting stage`:
+	// receive moderated new nick with the conversation
 	acceptedNick, err := co.RecvObj()
 	if err != nil {
 		panic(err)
 	}
-
-	// the accepted nick may be moderated, not necessarily the same as requested
 
 	// update local state and TUI, notice the new nick
 	chatter.nick = acceptedNick.(string)
@@ -285,13 +269,13 @@ func (chatter *Chatter) uploadFile(roomID, fn string) {
 		panic(err)
 	}
 
-	// start a new posting conversation for upload request
-	co, err := chatter.po.NewCo()
-	if err != nil {
-		panic(err)
-	}
-	func() {
-		defer co.Close() // close this po co for sure, on leaving this one-off func
+	if refused := func() bool {
+		// request the upload with a posting conversation
+		co, err := chatter.po.NewCo()
+		if err != nil {
+			panic(err)
+		}
+		defer co.Close()
 
 		// submit an upload request
 		if err = co.SendCode(
@@ -300,13 +284,21 @@ UploadReq(%#v, %#v, %d)
 `, roomID, fn, fsz)); err != nil {
 			panic(err)
 		}
-	}()
 
-	// after the co closed,  i.e. in its `recv` stage, receive upload confirmation
-	if refuseReason, err := co.RecvObj(); err != nil {
-		panic(err)
-	} else if refuseReason != nil {
-		fmt.Printf("Server refused the upload: %s\n", refuseReason)
+		// transit the conversation to `recv` stage a.s.a.p.
+		if err = co.StartRecv(); err != nil {
+			panic(err)
+		}
+
+		// receive upload confirmation
+		if refuseReason, err := co.RecvObj(); err != nil {
+			panic(err)
+		} else if refuseReason != nil {
+			fmt.Printf("Server refused the upload: %s\n", refuseReason)
+			return true // refused
+		}
+		return false // accepted
+	}(); refused {
 		return
 	}
 
@@ -322,64 +314,66 @@ UploadReq(%#v, %#v, %d)
 	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
 
 	// start another posting conversation for file data upload
-	co, err = chatter.po.NewCo()
+	co, err := chatter.po.NewCo()
 	if err != nil {
 		panic(err)
 	}
-	func() {
-		defer co.Close() // close this po co for sure, on leaving this one-off func
+	defer co.Close() // close this po co for sure, on leaving this one-off func
 
-		// send out receiving-code followed by binary stream
-		if err = co.SendCode(
-			fmt.Sprintf(`
+	// send out receiving-code followed by binary stream
+	if err = co.SendCode(
+		fmt.Sprintf(`
 RecvFile(%#v, %#v, %d)
 `, roomID, fn, fsz)); err != nil {
-			panic(err)
-		}
+		panic(err)
+	}
 
-		startTime = time.Now()
+	startTime = time.Now()
 
-		// nothing prevents the file from growing as we're sending, we only send
-		// as much as glanced above, so count remaining bytes down,
-		// send one 1-KB-chunk at max at a time.
-		bytesRemain := fsz
-		chunk := make([]byte, 1024) // reused 1 KB buffer
-		if err = co.SendStream(func() ([]byte, error) {
-			if bytesRemain <= 0 {
-				fmt.Printf( // overwrite line above prompt
-					"\x1B[1A\r\x1B[0K All %12d KB sent out.\n", totalKB,
-				)
-				return nil, nil
-			}
-
-			remainKB := int64(math.Ceil(float64(bytesRemain) / 1024))
+	// nothing prevents the file from growing as we're sending, we only send
+	// as much as glanced above, so count remaining bytes down,
+	// send one 1-KB-chunk at max at a time.
+	bytesRemain := fsz
+	chunk := make([]byte, 1024) // reused 1 KB buffer
+	if err = co.SendStream(func() ([]byte, error) {
+		if bytesRemain <= 0 {
 			fmt.Printf( // overwrite line above prompt
-				"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...\n", remainKB, totalKB,
+				"\x1B[1A\r\x1B[0K All %12d KB sent out.\n", totalKB,
 			)
-
-			if bytesRemain < int64(len(chunk)) {
-				chunk = chunk[:bytesRemain]
-			}
-			if n, err := f.Read(chunk); err != nil {
-				if err == io.EOF {
-					return nil, errors.New("file shrunk")
-				}
-				return nil, err
-			} else if n < len(chunk) {
-				// TODO read in a loop ?
-				return nil, errors.New("chunk not fully read")
-			}
-			bytesRemain -= int64(len(chunk))
-			// update chksum
-			chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
-			return chunk, nil
-		}); err != nil {
-			return
+			return nil, nil
 		}
-	}()
 
-	// after the co closed,  i.e. in its `recv` stage, receive the checksum calculated
-	// as peer received the data stream.
+		remainKB := int64(math.Ceil(float64(bytesRemain) / 1024))
+		fmt.Printf( // overwrite line above prompt
+			"\x1B[1A\r\x1B[0K %12d of %12d KB remaining ...\n", remainKB, totalKB,
+		)
+
+		if bytesRemain < int64(len(chunk)) {
+			chunk = chunk[:bytesRemain]
+		}
+		if n, err := f.Read(chunk); err != nil {
+			if err == io.EOF {
+				return nil, errors.New("file shrunk")
+			}
+			return nil, err
+		} else if n < len(chunk) {
+			// TODO read in a loop ?
+			return nil, errors.New("chunk not fully read")
+		}
+		bytesRemain -= int64(len(chunk))
+		// update chksum
+		chksum = crc32.Update(chksum, crc32.IEEETable, chunk)
+		return chunk, nil
+	}); err != nil {
+		return
+	}
+
+	// transit the conversation to `recv` stage a.s.a.p.
+	if err = co.StartRecv(); err != nil {
+		panic(err)
+	}
+
+	// receive the checksum calculated as peer received the data stream.
 	peerChksum, err := co.RecvObj()
 	if err != nil {
 		panic(err)
@@ -404,26 +398,21 @@ func (chatter *Chatter) listServerFiles(roomID string) {
 	if err != nil {
 		panic(err)
 	}
-	func() {
-		defer co.Close()
+	defer co.Close()
 
-		// send the file listing request
-		if err := co.SendCode(fmt.Sprintf(`
+	// send the file listing request
+	if err := co.SendCode(fmt.Sprintf(`
 ListFiles(%#v)
 `, roomID)); err != nil {
-			panic(err)
-		}
+		panic(err)
+	}
 
-		// close this posting conversation after all requests sent,
-		// so the wire is released immediately,
-		// for other posting conversaions to start off,
-		// without waiting roundtrip time of this conversation's response.
-	}()
+	// transit the conversation to `recv` stage a.s.a.p.
+	if err = co.StartRecv(); err != nil {
+		panic(err)
+	}
 
-	// once closed, this posting conversation enters `after-posting stage`,
-	// a closed po co can do NO sending anymore, but the receiving & processing of response,
-	// should be carried out in this stage.
-
+	// receive file info list with the conversation
 	fil, err := co.RecvObj()
 	if err != nil {
 		panic(err)
@@ -450,20 +439,22 @@ func (chatter *Chatter) downloadFile(roomID, fn string) {
 	if err != nil {
 		panic(err)
 	}
-	func() {
-		defer co.Close() // close this po co for sure, on leaving this one-off func
+	defer co.Close()
 
-		// send out download request
-		if err = co.SendCode(
-			fmt.Sprintf(`
+	// send out download request
+	if err = co.SendCode(
+		fmt.Sprintf(`
 SendFile(%#v, %#v)
 `, roomID, fn)); err != nil {
-			panic(err)
-		}
-	}()
+		panic(err)
+	}
 
-	// receive response AFTER the posting conversation closed,
-	// this is crucial for overall throughput.
+	// transit the conversation to `recv` stage a.s.a.p.
+	if err = co.StartRecv(); err != nil {
+		panic(err)
+	}
+
+	// receive response value object with the conversation
 	dldResp, err := co.RecvObj()
 	if err != nil {
 		panic(err)
@@ -762,6 +753,9 @@ func (chatter *Chatter) updatePrompt() {
 }
 
 func (chatter *Chatter) NickChanged(nick string) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
 
@@ -770,6 +764,9 @@ func (chatter *Chatter) NickChanged(nick string) {
 }
 
 func (chatter *Chatter) InRoom(roomID string) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
 
@@ -778,6 +775,9 @@ func (chatter *Chatter) InRoom(roomID string) {
 }
 
 func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	line.HidePrompt()
 	if roomMsgs.RoomID != chatter.inRoom {
 		fmt.Printf(" *** Messages in #%s ***\n", roomMsgs.RoomID)
@@ -789,6 +789,9 @@ func (chatter *Chatter) RoomMsgs(roomMsgs *ds.MsgsInRoom) {
 }
 
 func (chatter *Chatter) Said(msgID int) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	chatter.mu.Lock()
 	msg := chatter.sentMsgs[msgID]
 	chatter.sentMsgs[msgID] = ""
@@ -800,18 +803,27 @@ func (chatter *Chatter) Said(msgID int) {
 }
 
 func (chatter *Chatter) ShowNotice(text string) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	line.HidePrompt()
 	fmt.Println(text)
 	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterJoined(nick string, roomID string) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	line.HidePrompt()
 	fmt.Printf("@@ %s has joined #%s\n", nick, roomID)
 	line.ShowPrompt()
 }
 
 func (chatter *Chatter) ChatterLeft(nick string, roomID string) {
+	// nothing to recv and send, close ho co immediately
+	chatter.ho.Co().Close()
+
 	line.HidePrompt()
 	fmt.Printf("@@ %s has left #%s\n", nick, roomID)
 	line.ShowPrompt()

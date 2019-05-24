@@ -58,6 +58,28 @@ func (room *Room) chatterList() []*Chatter {
 	return chatters
 }
 
+// enumerate chatters in room, drop those disconnected and causing errors
+func (room *Room) eachInRoom(withChatter func(chatter *Chatter) error) {
+	var errChatters []*Chatter
+	for _, chatter := range room.chatterList() {
+		if err := withChatter(chatter); err != nil {
+			if chatter.po.Disconnected() {
+				errChatters = append(errChatters, chatter)
+			}
+		}
+	}
+	if len(errChatters) <= 0 {
+		return
+	}
+
+	room.Lock()
+	defer room.Unlock()
+
+	for _, chatter := range errChatters {
+		delete(room.chatters, chatter)
+	}
+}
+
 func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 	room.Lock()
 	defer room.Unlock()

@@ -123,28 +123,33 @@ ShowNotice(%#v)
 		}
 	}()
 
-	go func() { // send notification to others in a separated goroutine to avoid deadlock,
-		// which is possible when 2 ho co happens need to create po co to eachother.
-
-		for _, otherChatter := range chatter.inRoom.chatterList() {
-			if otherChatter == chatter {
-				continue // don't notif him/her self
-			}
-			if err := otherChatter.po.Notif(fmt.Sprintf(`
-ChatterJoined(%#v, %#v)
-`, chatter.nick, chatter.inRoom.roomID)); err != nil {
-				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
-			}
-		}
-	}()
-
 	// add this chatter into its 1st room
 	chatter.inRoom.Lock()
 	chatter.inRoom.chatters[chatter] = struct{}{}
 	chatter.inRoom.Unlock()
+
+	// start new po co to others in new goroutines to avoid deadlocks
+	go chatter.inRoom.eachInRoom(func(otherChatter *Chatter) error {
+		if otherChatter == chatter {
+			return nil // don't notif him/her self
+		}
+		if err := otherChatter.po.Notif(fmt.Sprintf(`
+ChatterJoined(%#v, %#v)
+`, chatter.nick, chatter.inRoom.roomID)); err != nil {
+			glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
+			return err
+		}
+		return nil
+	})
 }
 
 func (chatter *Chatter) SetNick(nick string) {
+	co := chatter.ho.Co()
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
+
 	// note: the nick can be moderated here
 	nick = strings.TrimSpace(nick)
 	if nick == "" {
@@ -154,13 +159,19 @@ func (chatter *Chatter) SetNick(nick string) {
 	chatter.nick = nick
 	chatter.mu.Unlock()
 
-	// peer expects the moderated new nick be sent back within the conversation
-	if err := chatter.ho.Co().SendObj(fmt.Sprintf("%#v", chatter.nick)); err != nil {
+	// peer expects the moderated new nick be sent back
+	if err := co.SendObj(fmt.Sprintf("%#v", chatter.nick)); err != nil {
 		panic(err)
 	}
 }
 
 func (chatter *Chatter) GotoRoom(roomID string) {
+	co := chatter.ho.Co()
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
+
 	oldRoom := chatter.inRoom
 	newRoom := prepareRoom(roomID)
 
@@ -183,7 +194,7 @@ func (chatter *Chatter) GotoRoom(roomID string) {
 @@ You are in #%s now, %d chatter(s).
 `, newRoom.roomID, len(newRoom.chatters)))
 	roomMsgs := newRoom.recentMsgLog()
-	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
+	if err := co.SendCode(fmt.Sprintf(`
 InRoom(%#v)
 ShowNotice(%#v)
 RoomMsgs(%#v)
@@ -191,39 +202,46 @@ RoomMsgs(%#v)
 		panic(err)
 	}
 
-	go func() { // send notification to others in a separated goroutine to avoid deadlock,
-		// which is possible when 2 ho co happens need to create po co to eachother.
-
-		for _, otherChatter := range oldRoom.chatterList() {
-			if otherChatter == chatter {
-				continue // skip him/her self
-			}
-			if err := otherChatter.po.Notif(fmt.Sprintf(`
+	// start new po co to others in new goroutines to avoid deadlocks
+	go oldRoom.eachInRoom(func(otherChatter *Chatter) error {
+		if otherChatter == chatter {
+			return nil // skip him/her self
+		}
+		if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterLeft(%#v, %#v)
 `, chatter.nick, oldRoom.roomID)); err != nil {
-				glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
-			}
+			glog.Errorf("Failed delivering room leaving msg to %s", otherChatter.po.RemoteAddr())
+			return err
 		}
-		for _, otherChatter := range newRoom.chatterList() {
-			if otherChatter == chatter {
-				continue // skip him/her self
-			}
-			if err := otherChatter.po.Notif(fmt.Sprintf(`
+		return nil
+	})
+	go newRoom.eachInRoom(func(otherChatter *Chatter) error {
+		if otherChatter == chatter {
+			return nil // skip him/her self
+		}
+		if err := otherChatter.po.Notif(fmt.Sprintf(`
 ChatterJoined(%#v, %#v)
 `, chatter.nick, newRoom.roomID)); err != nil {
-				glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
-			}
+			glog.Errorf("Failed delivering room entering msg to %s", otherChatter.po.RemoteAddr())
+			return err
 		}
-	}()
+		return nil
+	})
 }
 
-// Say showcase a service method with binary payload, that to be received from
+// Say showcase a service method with binary payload, that to be received with
 // current hosting conversation
 func (chatter *Chatter) Say(msgID int, msgLen int) {
+	co := chatter.ho.Co()
 
 	// decode input data
 	msgBuf := make([]byte, msgLen)
-	if err := chatter.ho.Co().RecvData(msgBuf); err != nil {
+	if err := co.RecvData(msgBuf); err != nil {
+		panic(err)
+	}
+
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
 		panic(err)
 	}
 
@@ -232,7 +250,7 @@ func (chatter *Chatter) Say(msgID int, msgLen int) {
 	chatter.inRoom.Post(chatter, msg)
 
 	// back-script the consumer to notify it about the success-of-display of the message
-	if err := chatter.ho.Co().SendCode(fmt.Sprintf(`
+	if err := co.SendCode(fmt.Sprintf(`
 Said(%d)
 `, msgID)); err != nil {
 		panic(err)
@@ -242,6 +260,10 @@ Said(%d)
 
 func (chatter *Chatter) UploadReq(roomID string, fn string, fsz int64) {
 	co := chatter.ho.Co()
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
 
 	if fsz > 200*1024*1024 { // 200 MB at most
 		// send the reason as string, why it's refused
@@ -321,6 +343,11 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 		panic(err)
 	}
 
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
+
 	// send back chksum for client to verify
 	if err = co.SendObj(hbi.Repr(chksum)); err != nil {
 		panic(err)
@@ -333,6 +360,12 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 }
 
 func (chatter *Chatter) ListFiles(roomID string) {
+	co := chatter.ho.Co()
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
+
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
 	if err != nil {
 		panic(err)
@@ -363,13 +396,17 @@ func (chatter *Chatter) ListFiles(roomID string) {
 	}
 
 	// send back repr for peer to land & receive as obj
-	if err = chatter.ho.Co().SendObj(interop.JSONArray(fil)); err != nil {
+	if err = co.SendObj(interop.JSONArray(fil)); err != nil {
 		panic(err)
 	}
 }
 
 func (chatter *Chatter) SendFile(roomID string, fn string) {
 	co := chatter.ho.Co()
+	// transit the hosting conversation to `send` stage a.s.a.p.
+	if err := co.StartSend(); err != nil {
+		panic(err)
+	}
 
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
 	if err != nil {
