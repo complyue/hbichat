@@ -13,12 +13,12 @@ print("Hello, HBI world!")
         ),
     )
 
-    he.expose_function(
-        "hello",  # reacting function name
-        lambda: he.ho.co.send_obj(
-            repr(f"Hello, {he.get('my_name')} from {he.po.remote_addr}!")
-        ),
-    )
+    async def hello():
+        co = he.ho.co()
+        await co.start_send()
+        await co.send_obj(repr(f"Hello, {he.get('my_name')} from {he.po.remote_addr}!"))
+
+    he.expose_function("hello", hello)
 
     return he
 
