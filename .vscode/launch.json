@@ -9,7 +9,8 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
-            "cwd": "/Volumes/RamDisk",
+            "cwd": "/dev/shm",
+            // "cwd": "/Volumes/RamDisk",
             "program": "${workspaceFolder}/cmd/server",
             "args": [
                 "-v=3"
@@ -24,7 +25,8 @@
             "env": {
                 "GOMAXPROCS": "2"
             },
-            "cwd": "/Volumes/RamDisk",
+            "cwd": "/dev/shm",
+            // "cwd": "/Volumes/RamDisk",
             "program": "${workspaceFolder}/cmd/client",
             "args": [
                 // "-v=3"
