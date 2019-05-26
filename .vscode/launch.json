@@ -40,7 +40,8 @@
                 "HBI_LOG_LEVEL": "DEBUG",
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
-            "cwd": "/Volumes/RamDisk",
+            "cwd": "/dev/shm",
+            // "cwd": "/Volumes/RamDisk",
             "module": "hbichat.cmd.server",
             "args": [],
             "console": "integratedTerminal"
@@ -53,7 +54,8 @@
                 "HBI_LOG_LEVEL": "DEBUG",
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
-            "cwd": "/Volumes/RamDisk",
+            "cwd": "/dev/shm",
+            // "cwd": "/Volumes/RamDisk",
             "module": "hbichat.cmd.client",
             "args": [],
             "console": "integratedTerminal"

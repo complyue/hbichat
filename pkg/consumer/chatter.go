@@ -619,9 +619,9 @@ Usage:
     download a file
 
 ! 
-	quit with stacktraces of all goroutines dumped
+    quit with stacktraces of all goroutines dumped
 
- * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
+* [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
     spam the service for stress-test
 
 `)

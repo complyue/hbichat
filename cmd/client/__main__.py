@@ -144,6 +144,8 @@ async def do_chatting():
             line_getter.stop()
 
 
+handle_signals()
+
 # run coroutines in another dedicated thread, so as to spare main thread to run TUI loop
 threading.Thread(target=asyncio.run, args=[do_chatting()], name="ChatClient").start()
 

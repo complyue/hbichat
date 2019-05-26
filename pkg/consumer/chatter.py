@@ -395,6 +395,9 @@ SendFile({room_id!r}, {fn!r})
                     # spam the service for stress-test
                     spec = sl[1:]
                     await self._spam(spec)
+                elif sl[0] == "!":
+                    # dump stacktrace of all aio tasks
+                    hbi.dump_aio_task_stacks()
                 elif sl[0] == "?":
                     # show usage
                     print(
@@ -419,7 +422,10 @@ Usage:
  < _file-name_
     download a file
 
- * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ]
+! 
+    dump stacktraces of all asyncio tasks
+
+* [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ]
     spam the service for stress-test
 """
                     )

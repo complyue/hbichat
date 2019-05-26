@@ -116,6 +116,8 @@ async def serve_chatting():
     await server.wait_closed()
 
 
+handle_signals()
+
 try:
     asyncio.run(serve_chatting())
 except KeyboardInterrupt:
