@@ -1,4 +1,4 @@
-# hbichat
+# HBICHAT
 
 Showcase and stress-test [HBI](https://github.com/complyue/hbi) in all supported languages.
 
@@ -6,7 +6,7 @@ HBICHAT is currently a bilingual (Python/Golang) project, i.e. with same functio
 and API/protocol implemented in both languages.
 It shall evolve to be trilingual (with es6 added) later, but not sooner.
 
-## Gettig HBICHAT
+## Getting HBICHAT
 
 ```console
 cyue@cyuembpx:~$ go get -u github.com/complyue/hbichat
