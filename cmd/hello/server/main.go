@@ -28,7 +28,7 @@ func main() {
 		he.ExposeFunction("__hbi_init__", // callback on wire connected
 			func(po *hbi.PostingEnd, ho *hbi.HostingEnd) {
 				po.Notif(`
-print("Hello, HBI world!")
+print("Welcome to HBI world!")
 `)
 			})
 
@@ -37,9 +37,10 @@ print("Hello, HBI world!")
 			if err := co.StartSend(); err != nil {
 				panic(err)
 			}
+			consumerName := he.Get("my_name")
 			if err := co.SendObj(hbi.Repr(fmt.Sprintf(
 				`Hello, %s from %s!`,
-				he.Get("my_name"), he.Po().RemoteAddr(),
+				consumerName, he.Po().RemoteAddr(),
 			))); err != nil {
 				panic(err)
 			}

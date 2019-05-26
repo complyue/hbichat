@@ -13,6 +13,7 @@ hello()
         await co.start_recv()
         msg_back = await co.recv_obj()
     print(msg_back)
+    await ho.disconnect()
 
 
 asyncio.run(say_hello_to({"host": "127.0.0.1", "port": 3232}))

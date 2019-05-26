@@ -8,7 +8,7 @@ def he_factory() -> hbi.HostingEnv:
         "__hbi_init__",  # callback on wire connected
         lambda po, ho: po.notif(
             f"""
-print("Hello, HBI world!")
+print("Welcome to HBI world!")
 """
         ),
     )
@@ -16,7 +16,8 @@ print("Hello, HBI world!")
     async def hello():
         co = he.ho.co()
         await co.start_send()
-        await co.send_obj(repr(f"Hello, {he.get('my_name')} from {he.po.remote_addr}!"))
+        consumer_name = he.get("my_name")
+        await co.send_obj(repr(f"Hello, {consumer_name} from {he.po.remote_addr}!"))
 
     he.expose_function("hello", hello)
 
@@ -37,4 +38,3 @@ try:
     asyncio.run(serve_hello())
 except KeyboardInterrupt:
     pass
-
