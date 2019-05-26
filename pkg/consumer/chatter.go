@@ -127,9 +127,10 @@ func (chatter *Chatter) setNick(nick string) {
 	if err != nil {
 		panic(err)
 	}
-	defer co.Close()
+	defer co.Close() // make sure it'll close anyway
 
-	// during the posting stage, send out the nick change request:
+	// a po co starts out in `send` stage
+	// send out the nick change request in `send` stage
 	if err = co.SendCode(
 		fmt.Sprintf(`
 SetNick(%#v)
@@ -137,32 +138,33 @@ SetNick(%#v)
 		panic(err)
 	}
 
-	// transit the posting conversaion to `recv` stage a.s.a.p.
+	// transit the po co from `send` to `recv` stage a.s.a.p.
 	if err = co.StartRecv(); err != nil {
 		panic(err)
 	}
 
-	// receive moderated new nick with the conversation
+	// receive response in `recv` stage
 	acceptedNick, err := co.RecvObj()
 	if err != nil {
 		panic(err)
 	}
 
-	// update local state and TUI, notice the new nick
+	// close the po co a.s.a.p.
+	co.Close()
+
+	// update local state and TUI
+	chatter.mu.Lock()
+	defer chatter.mu.Unlock()
 	chatter.nick = acceptedNick.(string)
 	chatter.updatePrompt()
+	// notice the new nick
 	fmt.Printf("Your are now known as `%s`\n", acceptedNick)
 }
 
 func (chatter *Chatter) gotoRoom(roomID string) {
 
-	// showcase the idiomatic HBI way of (asynchronous) service call.
-	// as the service is invoked, it's at its own discrepancy to back-script this consumer,
-	// to change its representatiion states as consequences of the service call. actually
-	// that's not only the requesting consumer, but all consumer instances connected to the
-	// service, are scripted in realtime response to this particular service call, in largely
-	// the same way (asynchronous server-pushing), of state transition to realize the overall
-	// system consequences.
+	// showcase the fire-and-forget idiom of service invocation,
+	// which can perform even better than async request-response, throughput wise.
 
 	if err := chatter.po.Notif(fmt.Sprintf(`
 GotoRoom(%#v)
@@ -172,14 +174,18 @@ GotoRoom(%#v)
 }
 
 func (chatter *Chatter) say(msg string) {
+
+	// showcase the classic request/response pattern of service invocation over HBI wire,
+	// with binary data in request body.
+
+	// binary data/stream needs to follow its `receiving-code` on the wire.
+	// hosting endpoint of the peer first sees the textual packet of the `receiving-code`,
+	// it then starts landing that code, as the `receiving-code` knows how long the
+	// data/stream is, it just extracts that many bytes from the wire, before HBI starts
+	// intepreting following transmission as a new textual packet.
+
 	chatter.mu.Lock()
 	defer chatter.mu.Unlock()
-
-	// showcase the idiomatic HBI way of (asynchronous) service call, with binary data
-	// data following its `receiving-code`, together posted to the service for landing.
-	// the service is expected to notify the success-of-display of the message, by
-	// back-scripting this consumer to land `Said(msg_id)` during the `after-posting stage`
-	// of the implicitly started posting conversation from `po.notif_data()`.
 
 	// record msg to send in local log
 	msgID := -1
@@ -377,6 +383,7 @@ RecvFile(%#v, %#v, %d)
 	if err != nil {
 		panic(err)
 	}
+
 	elapsed := time.Since(startTime)
 	fmt.Printf( // overwrite line above
 		"\x1B[1A\r\x1B[0K All %d KB uploaded in %v\n", totalKB, elapsed)

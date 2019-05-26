@@ -51,50 +51,34 @@ class Chatter:
         # showcase the classic request/response pattern of service invocation over HBI wire.
 
         # start a new posting conversation
-        async with self.po.co() as co:  # this async context manager scope programs the
-            # `posting stage` of co - a `posting conversation`
+        async with self.po.co() as co:
 
-            # during the posting stage, send out the nick change request:
+            # a po co starts out in `send` stage
+            # send out the nick change request in `send` stage
             await co.send_code(
                 rf"""
 SetNick({nick!r})
 """
             )
 
-            # close the posting conversation as soon as all requests are sent,
-            # so the wire is released immediately, for rest posting conversaions to start off,
-            # with RTT between requests eliminated.
+            # transit the po co from `send` to `recv` stage a.s.a.p.
+            await co.start_recv()
 
-        # once closed, this posting conversation enters `after-posting stage`,
-        # a closed po co can do NO sending anymore, but the receiving & processing of response,
-        # should be carried out in this stage.
+            # receive response in `recv` stage
+            accepted_nick = await co.recv_obj()
 
-        # execution of current coroutine is actually suspended during `co.recv_obj()`, until
-        # the inbound payload matching `co.co_seq` appears on the wire, at which time that
-        # payload will be `landed` and the land result will be returned by `co.recv_obj()`.
-        # before that, the wire should be busy off loading inbound data corresponding to
-        # previous conversations, either posting ones initiated by local peer, or hosting
-        # ones triggered by remote peer.
+        # close the po co a.s.a.p.
 
-        # receive response within `after-posting stage`:
-        accepted_nick = await co.recv_obj()
-
-        # the accepted nick may be moderated, not necessarily the same as requested
-
-        # update local state and TUI, notice the new nick
+        # update local state and TUI
         self.nick = accepted_nick
         self._update_prompt()
+        # notice the new nick
         print(f"You are now known as `{self.nick}`")
 
     async def _goto_room(self, room_id: str):
 
-        # showcase the idiomatic HBI way of (asynchronous) service call.
-        # as the service is invoked, it's at its own discrepancy to back-script this consumer,
-        # to change its representatiion states as consequences of the service call. actually
-        # that's not only the requesting consumer, but all consumer instances connected to the
-        # service, are scripted in realtime response to this particular service call, in largely
-        # the same way (asynchronous server-pushing), of state transition to realize the overall
-        # system consequences.
+        # showcase the fire-and-forget idiom of service invocation,
+        # which can perform even better than async request-response, throughput wise.
 
         await self.po.notif(
             rf"""
@@ -104,11 +88,14 @@ GotoRoom({room_id!r})
 
     async def _say(self, msg: str):
 
-        # showcase the idiomatic HBI way of (asynchronous) service call, with binary data
-        # data following its `receiving-code`, together posted to the service for landing.
-        # the service is expected to notify the success-of-display of the message, by
-        # back-scripting this consumer to land `Said(msg_id)` during the `after-posting stage`
-        # of the implicitly started posting conversation from `po.notif_data()`.
+        # showcase the classic request/response pattern of service invocation over HBI wire,
+        # with binary data in request body.
+
+        # binary data/stream needs to follow its `receiving-code` on the wire.
+        # hosting endpoint of the peer first sees the textual packet of the `receiving-code`,
+        # it then starts landing that code, as the `receiving-code` knows how long the
+        # data/stream is, it just extracts that many bytes from the wire, before HBI starts
+        # intepreting following transmission as a new textual packet.
 
         # record msg to send in local log
         try:
@@ -170,12 +157,32 @@ Say({msg_id!r}, {len(msg_buf)!r})
             f.seek(0, 2)
             fsz = f.tell()
 
+            total_kb = int(math.ceil(fsz / 1024))
+            print(f" Start uploading {total_kb} KB data ...")
+
+            async with self.po.co() as co:  # request the upload with a posting conversation
+
+                # submit an upload request
+                await co.send_code(
+                    rf"""
+RecvFile({room_id!r}, {fn!r}, {fsz!r})
+"""
+                )
+
+                # transit the conversation to `recv` stage a.s.a.p.
+                await co.start_recv()
+
+                # receive upload confirmation
+                refuse_reason = await co.recv_obj()
+                if refuse_reason is not None:
+                    print(f"Server refused the upload: {refuse_reason}")
+                    return
+
+                # upload accepted
+
             # prepare to send file data from beginning, calculate checksum by the way
             f.seek(0, 0)
             chksum = 0
-
-            total_kb = int(math.ceil(fsz / 1024))
-            print(f" Start uploading {total_kb} KB data ...")
 
             def stream_file_data():  # a generator function is ideal for binary data streaming
                 nonlocal chksum  # this is needed outer side, write to that var
@@ -211,34 +218,18 @@ Say({msg_id!r}, {len(msg_buf)!r})
 RecvFile({room_id!r}, {fn!r}, {fsz!r})
 """
                 )
-
-                # the implemented solution here is very anti-throughput,
-                # the wire is hogged by this conversation for a full network roundtrip,
-                # the pipeline will be drained due to blocking wait.
-                #
-                # but for demonstration purpose, this solution can get the job done at least.
-                #
-                # a better solution, that's throughput-wise, should be the client submiting an upload
-                # intent, and if the service accepts the meta info, it then opens a posting conversation
-                # from server side, requests the hosting endpoint of the client to do upload; or in
-                # the other case, notify the reason why it's not accepted.
-                refuse_reason = await co.recv_obj()
-                if refuse_reason is not None:
-                    print(f"Server refused the upload: {refuse_reason}")
-                    return
-
-                # upload accepted, proceed to upload file data
                 start_time = time.monotonic()
                 await co.send_data(stream_file_data())
 
-        # receive response AFTER the posting conversation closed,
-        # this is crucial for overall throughput.
-        # note the file is also closed as earlier as possible.
-        peer_chksum = await co.recv_obj()
+                # transit the conversation to `recv` stage a.s.a.p.
+                await co.start_recv()
+
+                # receive the checksum calculated as peer received the data stream.
+                peer_chksum = await co.recv_obj()
+
         elapsed_seconds = time.monotonic() - start_time
 
-        # overwrite line above
-        print(
+        print(  # overwrite line above
             f"\x1B[1A\r\x1B[0K All {total_kb} KB uploaded in {elapsed_seconds:0.2f} second(s)."
         )
         # validate chksum calculated at peer side as it had all data received
@@ -262,16 +253,10 @@ ListFiles({room_id!r})
 """
             )
 
-            # close this posting conversation after all requests sent,
-            # so the wire is released immediately,
-            # for other posting conversaions to start off,
-            # without waiting roundtrip time of this conversation's response.
+            # transit the conversation to `recv` stage a.s.a.p.
+            await co.start_recv()
 
-        # once closed, this posting conversation enters `after-posting stage`,
-        # a closed po co can do NO sending anymore, but the receiving & processing of response,
-        # should be carried out in this stage.
-
-        fil = await co.recv_obj()
+            fil = await co.recv_obj()
 
         # show received file info list
         print(
@@ -293,68 +278,70 @@ SendFile({room_id!r}, {fn!r})
 """
             )
 
-        # receive response AFTER the posting conversation closed,
-        # this is crucial for overall throughput.
-        fsz, msg = await co.recv_obj()
-        if fsz < 0:
-            print(f"Server refused file downlaod: {msg}")
-            return
-        elif msg is not None:
-            print(f"@@ Server: {msg}")
+            # transit the conversation to `recv` stage a.s.a.p.
+            await co.start_recv()
 
-        fpth = os.path.join(room_dir, fn)
+            fsz, msg = await co.recv_obj()
+            if fsz < 0:
+                print(f"Server refused file downlaod: {msg}")
+                return
 
-        # no truncate in case another spammer is racing to upload the same file.
-        # concurrent reading and writing to a same file is wrong in most but this spamming case.
-        f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
-        try:
-            total_kb = int(math.ceil(fsz / 1024))
-            print(f" Start downloading {total_kb} KB data ...")
+            if msg is not None:
+                print(f"@@ Server: {msg}")
 
-            # prepare to recv file data from beginning, calculate checksum by the way
-            chksum = 0
+            fpth = os.path.join(room_dir, fn)
 
-            def stream_file_data():  # a generator function is ideal for binary data streaming
-                nonlocal chksum  # this is needed outer side, write to that var
+            # no truncate in case another spammer is racing to upload the same file.
+            # concurrent reading and writing to a same file is wrong in most but this spamming case.
+            f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
+            try:
+                total_kb = int(math.ceil(fsz / 1024))
+                print(f" Start downloading {total_kb} KB data ...")
 
-                # receive 1 KB at most at a time
-                buf = bytearray(1024)
+                # prepare to recv file data from beginning, calculate checksum by the way
+                chksum = 0
 
-                bytes_remain = fsz
-                while bytes_remain > 0:
+                def stream_file_data():  # a generator function is ideal for binary data streaming
+                    nonlocal chksum  # this is needed outer side, write to that var
 
-                    if len(buf) > bytes_remain:
-                        buf = buf[:bytes_remain]
+                    # receive 1 KB at most at a time
+                    buf = bytearray(1024)
 
-                    yield buf  # yield it so as to be streamed from client
+                    bytes_remain = fsz
+                    while bytes_remain > 0:
 
-                    f.write(buf)  # write received data to file
+                        if len(buf) > bytes_remain:
+                            buf = buf[:bytes_remain]
 
-                    bytes_remain -= len(buf)
+                        yield buf  # yield it so as to be streamed from client
 
-                    chksum = crc32(buf, chksum)  # update chksum
+                        f.write(buf)  # write received data to file
 
-                    remain_kb = int(math.ceil(bytes_remain / 1024))
-                    print(  # overwrite line above prompt
-                        f"\x1B[1A\r\x1B[0K {remain_kb:12d} of {total_kb:12d} KB remaining ..."
-                    )
+                        bytes_remain -= len(buf)
 
-                assert bytes_remain == 0, "?!"
+                        chksum = crc32(buf, chksum)  # update chksum
 
-                # overwrite line above prompt
-                print(f"\x1B[1A\r\x1B[0K All {total_kb} KB received.")
+                        remain_kb = int(math.ceil(bytes_remain / 1024))
+                        print(  # overwrite line above prompt
+                            f"\x1B[1A\r\x1B[0K {remain_kb:12d} of {total_kb:12d} KB remaining ..."
+                        )
 
-            # receive data stream from server
-            start_time = time.monotonic()
-            await co.recv_data(stream_file_data())
-        finally:
-            f.close()
+                    assert bytes_remain == 0, "?!"
 
-        peer_chksum = await co.recv_obj()
+                    # overwrite line above prompt
+                    print(f"\x1B[1A\r\x1B[0K All {total_kb} KB received.")
+
+                # receive data stream from server
+                start_time = time.monotonic()
+                await co.recv_data(stream_file_data())
+            finally:
+                f.close()
+
+            peer_chksum = await co.recv_obj()
+
         elapsed_seconds = time.monotonic() - start_time
 
-        # overwrite line above
-        print(
+        print(  # overwrite line above
             f"\x1B[1A\r\x1B[0K All {total_kb} KB downloaded in {elapsed_seconds:0.2f} second(s)."
         )
         # validate chksum calculated at peer side as it had all data sent

@@ -236,7 +236,7 @@ ChatterJoined(%#v, %#v)
 func (chatter *Chatter) Say(msgID int, msgLen int) {
 	co := chatter.ho.Co()
 
-	// decode input data
+	// receive & decode input data
 	msgBuf := make([]byte, msgLen)
 	if err := co.RecvData(msgBuf); err != nil {
 		panic(err)
@@ -247,7 +247,7 @@ func (chatter *Chatter) Say(msgID int, msgLen int) {
 		panic(err)
 	}
 
-	// use the input data
+	// post the msg to current room
 	msg := string(msgBuf)
 	chatter.inRoom.Post(chatter, msg)
 
@@ -289,9 +289,10 @@ func (chatter *Chatter) UploadReq(roomID string, fn string, fsz int64) {
 }
 
 func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
+	co := chatter.ho.Co()
+
 	// TODO in a real world application, the same validation rules as in UploadReq()
 	// should be checked again, or it's a security hole that a consumer can exploit.
-	co := chatter.ho.Co()
 
 	roomDir, err := filepath.Abs(fmt.Sprintf("chat-server-files/%s", roomID))
 	if err != nil {
@@ -352,6 +353,11 @@ func (chatter *Chatter) RecvFile(roomID string, fn string, fsz int64) {
 
 	// send back chksum for client to verify
 	if err = co.SendObj(hbi.Repr(chksum)); err != nil {
+		panic(err)
+	}
+
+	// close the hosting conversation a.s.a.p.
+	if err = co.Close(); err != nil {
 		panic(err)
 	}
 

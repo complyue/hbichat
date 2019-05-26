@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/complyue/hbichat/pkg/ds"
-	"github.com/golang/glog"
 )
 
 // global states for a chat service instance
@@ -94,7 +93,6 @@ func (room *Room) recentMsgLog() *ds.MsgsInRoom {
 
 func (room *Room) Post(from *Chatter, content string) {
 	var msg *ds.Msg
-	chatters := room.chatterList()
 
 	func() {
 		room.Lock()
@@ -110,20 +108,17 @@ func (room *Room) Post(from *Chatter, content string) {
 		room.cachedMsgLog = nil
 	}()
 
-	go func() { // send notification to others in a separated goroutine to avoid deadlock,
-		// which is possible when 2 ho co happens need to create po co to eachother.
-
-		notifOut := &ds.MsgsInRoom{room.roomID, []ds.Msg{*msg}}
-		notifCode := fmt.Sprintf(`
+	// notify all chatters but the OP in this room about the new msg
+	notifOut := &ds.MsgsInRoom{room.roomID, []ds.Msg{*msg}}
+	notifCode := fmt.Sprintf(`
 RoomMsgs(%#v)
 `, notifOut)
-		for _, chatter := range chatters {
-			if chatter == from {
-				continue // don't notif the OP
-			}
-			if err := chatter.po.Notif(notifCode); err != nil {
-				glog.Errorf("Failed delivering msg to consumer %s - %+v", chatter.po.RemoteAddr(), err)
-			}
+
+	// send notification to others in a separated goroutine to avoid deadlock
+	go room.eachInRoom(func(chatter *Chatter) error {
+		if chatter == from {
+			return nil // not to the OP
 		}
-	}()
+		return chatter.po.Notif(notifCode)
+	})
 }

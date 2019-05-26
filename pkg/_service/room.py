@@ -1,6 +1,7 @@
 import asyncio
 import time
 from collections import deque
+from typing import *
 
 import hbi
 
@@ -23,6 +24,20 @@ class Room:
         self.msgs = deque((), max_hist)
         self.cached_msg_log = None
         self.chatters = set()
+
+    async def each_in_room(self, with_chatter: Callable[["Chatter"], None]):
+        # enumerate chatters in room, drop those disconnected and causing errors
+        err_chatters = set()
+        for chatter in [  # snapshot the chatters set into a list for enumeration
+            *self.chatters
+        ]:
+            try:
+                await with_chatter(chatter)
+            except Exception:
+                if not chatter.po.is_connected():
+                    err_chatters.add(chatter)
+        if err_chatters:
+            self.chatters -= err_chatters
 
     def recent_msg_log(self):
         if self.cached_msg_log is None:
@@ -47,23 +62,11 @@ class Room:
         notif_code = rf"""
 RoomMsgs({room_msgs!r})
 """
-        loop = asyncio.get_running_loop()
-        stale_chatters = set()
-        # no await in the loop, no need to snapshot the set
-        for chatter in self.chatters:
+
+        async def deliver_room_msg(chatter: "Chatter"):
             if chatter is from_chatter:
-                # starting a new po co with a ho co open will deadlock, make great sure to avoid that
-                continue
-            try:
-                # spawn the notification coroutine so the posting chatter's hosting conversation (which is
-                # calling this coro) does not wait for end of this chatter's current conversation to finish
-                # sending out of the `notif`.
-                loop.create_task(chatter.po.notif(notif_code))
-                # if the `notif()` shall be awaited here, care should be taken to avoid possible deadlocks.
-            except Exception:
-                logger.warning(
-                    f"Dropping chat client [{chatter.po.net_ident}] due to error sending to it.",
-                    exc_info=True,
-                )
-                stale_chatters.add(chatter)
-        self.chatters -= stale_chatters
+                return  # not to the OP
+            await chatter.po.notif(notif_code)
+
+        # send notification to others in a separated aio task to avoid deadlock
+        asyncio.create_task(self.each_in_room(deliver_room_msg))

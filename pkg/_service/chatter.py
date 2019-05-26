@@ -77,27 +77,35 @@ ShowNotice({welcome_text!r})
             )
 
         # send new comer info to other chatters already in room
-        for chatter in [*self.in_room.chatters]:
-            if chatter is self:
-                # starting a new po co with a ho co open will deadlock, make great sure to avoid that
-                continue
+        async def notif_chatter_join(chatter: "Chatter"):
+            assert chatter is not self, "how can that be ?!"
             await chatter.po.notif(
                 f"""
 ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
 """
             )
 
+        await self.in_room.each_in_room(notif_chatter_join)
+
         # add this chatter into its 1st room
         self.in_room.chatters.add(self)
 
     async def SetNick(self, nick: str):
+        co: HoCo = self.ho.co()
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
+
         # note: the nick can be moderated here
         self.nick = str(nick).strip() or f"Anonymous@{self.po.remote_addr!s}"
 
-        # peer expects the moderated new nick be sent back within the conversation
-        await self.ho.co.send_obj(repr(self.nick))
+        # peer expects the moderated new nick be sent back
+        await co.send_obj(repr(self.nick))
 
     async def GotoRoom(self, room_id):
+        co: HoCo = self.ho.co()
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
+
         old_room = self.in_room
         new_room = prepare_room(str(room_id).strip())
 
@@ -116,7 +124,7 @@ ChatterJoined({self.nick!r}, {self.in_room.room_id!r})
         # send feedback
         room_msgs = new_room.recent_msg_log()
         welcome_text = "\n".join(str(line) for line in welcome_lines)
-        await self.ho.co.send_code(
+        await co.send_code(
             f"""
 InRoom({new_room.room_id!r})
 ShowNotice({welcome_text!r})
@@ -124,115 +132,93 @@ RoomMsgs({room_msgs!r})
 """
         )
 
-        async def notif_others():  # send notification to others in a separated coroutine to avoid deadlock,
-            # which is possible when 2 ho co happens need to create po co to eachother.
-
-            for chatter in [
-                # as to await sth during the loop, snapshot the chatters set here,
-                # or concurrent modification to the set will raise error to this loop.
-                *old_room.chatters
-            ]:
-                if chatter is self:
-                    # starting a new po co with a ho co open will deadlock, make great sure to avoid that
-                    continue
-                await chatter.po.notif(
-                    f"""
+        async def notif_chatter_leave(chatter: "Chatter"):
+            if chatter is self:
+                return  # may occur under frequent room changes like being spammed
+            await chatter.po.notif(
+                f"""
 ChatterLeft({self.nick!r}, {old_room.room_id!r})
 """
-                )
-            for chatter in [
-                # as to await sth during the loop, snapshot the chatters set here,
-                # or concurrent modification to the set will raise error to this loop.
-                *new_room.chatters
-            ]:
-                if chatter is self:
-                    # starting a new po co with a ho co open will deadlock, make great sure to avoid that
-                    continue
-                await chatter.po.notif(
-                    f"""
+            )
+
+        async def notif_chatter_join(chatter: "Chatter"):
+            if chatter is self:
+                return  # may occur under frequent room changes like being spammed
+            await chatter.po.notif(
+                f"""
 ChatterJoined({self.nick!r}, {new_room.room_id!r})
 """
-                )
+            )
 
-        asyncio.create_task(notif_others())
+        # start new po co to others in new aio tasks to avoid deadlocks
+        asyncio.create_task(old_room.each_in_room(notif_chatter_leave))
+        asyncio.create_task(new_room.each_in_room(notif_chatter_join))
 
     # showcase a service method with binary payload, that to be received from
     # current hosting conversation
     async def Say(self, msg_id, msg_len: int):
+        co: HoCo = self.ho.co()
 
-        # decode the input data
+        # receive & decode the input data
         assert isinstance(
             msg_len, int
         ), f"msg_len {msg_len!r} of type {type(msg_len)!r} instead of int ?!"
         msg_buf = bytearray(msg_len)
-        await self.ho.co.recv_data(msg_buf)
+        await co.recv_data(msg_buf)
         msg = msg_buf.decode("utf-8")
 
-        # use the input data
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
+
+        # post the msg to current room
         await self.in_room.post_msg(self, msg)
 
         # back-script the consumer to notify it about the success-of-display of the message
-        await self.ho.co.send_code(
+        await co.send_code(
             f"""
 Said({msg_id!r})
 """
         )
 
-    async def RecvFile(self, room_id: str, fn: str, fsz: int):
-        co: HoCo = self.ho.co
+    async def UploadReq(self, room_id: str, fn: str, fsz: int):
+        co: HoCo = self.ho.co()
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
 
-        # the implemented solution here is very anti-throughput,
-        # the wire is hogged by this conversation for a full network roundtrip,
-        # the pipeline will be drained due to blocking wait.
-        #
-        # but for demonstration purpose, this solution can get the job done at least.
-        #
-        # a better solution, that's throughput-wise, should be the client submiting an upload
-        # intent, and if the service accepts the meta info, it then opens a posting conversation
-        # from server side, requests the hosting endpoint of the client to do upload; or in
-        # the other case, notify the reason why it's not accepted.
-
-        if fsz > 50 * 1024 * 1024:  # 50 MB at most
+        if fsz > 200 * 1024 * 1024:  # 200 MB at most
             # send the reason as string, why it's refused
             await co.send_obj(repr(f"file too large!"))
             return
-        if fsz < 20 * 1024:  # 20 KB at least
+        if fsz < 2 * 1024:  # 2 KB at least
             # send the reason as string, why it's refused
             await co.send_obj(repr(f"file too small!"))
             return
+
+        # None as refuse_reason means the upload is accepted
+        await co.send_obj(None)
+
+    async def RecvFile(self, room_id: str, fn: str, fsz: int):
+        co: HoCo = self.ho.co()
+
+        # TODO in a real world application, the same validation rules as in UploadReq()
+        # should be checked again, or it's a security hole that a consumer can exploit.
 
         room_dir = os.path.abspath(f"chat-server-files/{room_id}")
         os.makedirs(room_dir, exist_ok=True)
 
         fpth = os.path.join(room_dir, fn)
         try:
-            f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
-        except OSError:
-            # failed open file for writing
-            refuse_reason = traceback.print_exc()
-            await co.send_obj(repr(refuse_reason))
-            return
+            # unlink the file before creating a new one, so if someone has opened it for
+            # download, that can finish normally.
+            os.unlink(fpth)
+        except FileNotFoundError:
+            pass
+        f = open(fpth, "wb")
 
         # prepare to recv file data from beginning, calculate chksum by the way
         chksum = 0
 
         try:
-
-            # check that not to shrink a file by uploading a smaller one, for file downloads in
-            # stress-test with a spammer not to fail due to file shrunk
-            f.seek(0, 2)
-            existing_fsz = f.tell()
-            if fsz < existing_fsz:
-                await co.send_obj(
-                    repr(
-                        "can only upload a file bigger than existing version on server!"
-                    )
-                )
-                return
-            f.seek(0, 0)  # reset write position to file beginning
-
-            # None as refuse_reason means the upload is accepted
-            await co.send_obj(None)
 
             def stream_file_data():  # a generator function is ideal for binary data streaming
                 nonlocal chksum  # this is needed outer side, write to that var
@@ -264,8 +250,14 @@ Said({msg_id!r})
         finally:
             f.close()
 
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
+
         # send back chksum for client to verify
         await co.send_obj(repr(chksum))
+
+        # close the hosting conversation a.s.a.p.
+        await co.close()
 
         # announce this new upload
         await self.in_room.post_msg(
@@ -276,6 +268,10 @@ Said({msg_id!r})
         )
 
     async def ListFiles(self, room_id: str):
+        co: HoCo = self.ho.co()
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
+
         room_dir = os.path.abspath(f"chat-server-files/{room_id}")
         if not os.path.isdir(room_dir):
             logger.info(f"Making room dir [{room_dir}] ...")
@@ -292,10 +288,12 @@ Said({msg_id!r})
             fil.append([s.st_size, fn])
 
         # send back repr for peer to land & receive as obj
-        await self.ho.co.send_obj(repr(fil))
+        await co.send_obj(repr(fil))
 
     async def SendFile(self, room_id: str, fn: str):
-        co = self.ho.co
+        co: HoCo = self.ho.co()
+        # transit the hosting conversation to `send` stage a.s.a.p.
+        await co.start_send()
 
         fpth = os.path.abspath(os.path.join("chat-server-files", room_id, fn))
         if not os.path.exists(fpth) or not os.path.isfile(fpth):
