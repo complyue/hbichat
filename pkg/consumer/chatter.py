@@ -165,7 +165,7 @@ Say({msg_id!r}, {len(msg_buf)!r})
                 # submit an upload request
                 await co.send_code(
                     rf"""
-RecvFile({room_id!r}, {fn!r}, {fsz!r})
+UploadReq({room_id!r}, {fn!r}, {fsz!r})
 """
                 )
 
@@ -425,8 +425,9 @@ Usage:
 ! 
     dump stacktraces of all asyncio tasks
 
-* [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ]
+* [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
     spam the service for stress-test
+
 """
                     )
                 else:
@@ -444,16 +445,20 @@ Usage:
 
     async def _spam(self, spec: str):
         fields = [int(f) for f in spec.split()]
-        n_bots, n_rooms, n_msgs, n_files, kb_max = (
-            fields + [10, 10, 10, 10, 1234][len(fields) :]
+        n_bots, n_rooms, n_msgs, n_files, kb_max, kb_min = (
+            fields + [10, 10, 10, 10, 1234, 2][len(fields) :]
         )
 
         if kb_max > 0:
+            if kb_min > kb_max:
+                kb_min = kb_max
+            if kb_min < 1:
+                kb_min = 1
             print(
                 rf"""
 Start spamming with {n_bots} bots in up to {n_rooms} rooms,
   each to speak up to {n_msgs} messages,
-  and upload/download up to {n_files} files, each up to {kb_max} KB large ...
+  and upload/download up to {n_files} files, each up to {kb_min} ~ {kb_max} KB large ...
 
 """
             )
@@ -487,28 +492,27 @@ Start spamming with {n_bots} bots in up to {n_rooms} rooms,
 
                     if do_upload:
 
-                        # generate file if not present
+                        # fill file with random data if not present or not big enough
+                        kb_file = random.randint(kb_min, kb_max)
                         fpth = os.path.join(room_dir, fn)
-                        if not os.path.exists(fpth):
-                            # no truncate in case another spammer is racing to write the same file.
-                            # concurrent writing to a same file is wrong in most but this spamming case.
-                            f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
-                            try:
-                                kb_file = random.randint(1, kb_max)
-                                f.seek(0, 2)
-                                existing_fsz = f.tell()
+                        # no truncate in case another spammer is racing to write the same file.
+                        # concurrent writing to a same file is wrong in most real world cases,
+                        # but here we're just spamming ...
+                        f = os.fdopen(os.open(fpth, os.O_RDWR | os.O_CREAT), "rb+")
+                        try:
+                            f.seek(0, 2)
+                            existing_fsz = f.tell()
 
-                                # only write when file is not big enough
-                                if existing_fsz < 1024 * kb_file:
-                                    f.seek(0, 0)
-                                    for i in range(kb_file):
-                                        f.write(
-                                            random.getrandbits(8 * 1024).to_bytes(
-                                                1024, sys.byteorder
-                                            )
+                            if existing_fsz < 1024 * kb_file:
+                                f.seek(0, 0)
+                                for i in range(kb_file):
+                                    f.write(
+                                        random.getrandbits(8 * 1024).to_bytes(
+                                            1024, sys.byteorder
                                         )
-                            finally:
-                                f.close()
+                                    )
+                        finally:
+                            f.close()
 
                         await self._goto_room(id_room)
                         await self._set_nick(idSpammer)
@@ -532,7 +536,7 @@ Start spamming with {n_bots} bots in up to {n_rooms} rooms,
                 rf"""
 Spammed with {n_bots} bots in up to {n_rooms} rooms,
   each to speak up to {n_msgs} messages,
-  and upload/download up to {n_files} files, each up to {kb_max} KB large.
+  and upload/download up to {n_files} files, each up to {kb_min} ~ {kb_max} KB large ...
 
 """
             )

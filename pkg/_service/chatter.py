@@ -41,6 +41,7 @@ class Chatter:
         "SetNick",
         "GotoRoom",
         "Say",
+        "UploadReq",
         "RecvFile",
         "ListFiles",
         "SendFile",
