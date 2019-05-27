@@ -9,9 +9,9 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/complyue/hbi"
@@ -592,9 +592,15 @@ func (chatter *Chatter) keepChatting() {
 			// spam the service for stress-test
 			chatter.spam(code[1:])
 		} else if code[0] == '!' {
-			// send self a quit signal to dump stacktrace of all goroutines
-			// as stdin is being read, Ctrl^\ won't do the job
-			syscall.Kill(syscall.Getpid(), syscall.SIGQUIT)
+			// dump stacktrace of all goroutines
+
+			// less readable
+			// pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+
+			// more readable https://github.com/moby/moby/blob/95fcf76cc64a4acf95c168e8d8607e3acf405c13/pkg/signal/trap.go
+			buf := make([]byte, 16384)
+			buf = buf[:runtime.Stack(buf, true)]
+			fmt.Fprintf(os.Stderr, "\n=== BEGIN goroutine stack dump ===\n\n%s\n=== END goroutine stack dump ===\n\n", buf)
 		} else if code[0] == '?' {
 			// show usage
 			fmt.Print(`
@@ -619,7 +625,7 @@ Usage:
     download a file
 
 ! 
-    quit with stacktraces of all goroutines dumped
+    dump stacktraces of all goroutines
 
 * [ _n_bots_=10 ] [ _n_rooms_=10 ] [ _n_msgs_=10 ] [ _n_files_=10 ] [ _file_max_kb_=1234 ] [ _file_min_kb_=2 ]
     spam the service for stress-test
