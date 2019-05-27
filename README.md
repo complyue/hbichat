@@ -9,7 +9,7 @@ It shall evolve to be trilingual (with es6 added) later, but not sooner.
 ## Getting HBICHAT
 
 ```console
-cyue@cyuembpx:~$ go get -u github.com/complyue/hbichat
+cyue@cyuembpx:~$ go get -u github.com/complyue/hbichat/...
 ```
 
 ## Running HBICHAT Server
