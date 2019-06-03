@@ -100,7 +100,7 @@ def he_factory():  # Create a hosting env reacting to chat consumers
 
 
 async def serve_chatting():
-    server = await serve_socket(
+    server = await serve_tcp(
         # listening IP address(es)
         service_addr,
         # the hosting env factory function

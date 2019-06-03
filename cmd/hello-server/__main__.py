@@ -26,7 +26,7 @@ print("Welcome to HBI world!")
 
 async def serve_hello():
 
-    server = await hbi.serve_socket(
+    server = await hbi.serve_tcp(
         {"host": "127.0.0.1", "port": 3232},  # listen address
         he_factory,  # factory for hosting environment
     )

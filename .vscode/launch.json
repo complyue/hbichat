@@ -99,7 +99,7 @@
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
             "cwd": "${workspaceFolder}",
-            "module": "hbichat.cmd.hello.server",
+            "module": "hbichat.cmd.hello-server",
             "args": [],
             "console": "integratedTerminal"
         },
@@ -112,7 +112,7 @@
                 "HBICHAT_LOG_LEVEL": "DEBUG"
             },
             "cwd": "${workspaceFolder}",
-            "module": "hbichat.cmd.hello.client",
+            "module": "hbichat.cmd.hello-client",
             "args": [],
             "console": "integratedTerminal"
         },
@@ -125,7 +125,7 @@
                 "GOMAXPROCS": "2"
             },
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/cmd/hello/server",
+            "program": "${workspaceFolder}/cmd/hello-server",
             "args": [
                 // "-v=3"
             ]
@@ -139,7 +139,7 @@
                 "GOMAXPROCS": "2"
             },
             "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/cmd/hello/client",
+            "program": "${workspaceFolder}/cmd/hello-client",
             "args": [
                 // "-v=3"
             ]

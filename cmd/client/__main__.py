@@ -116,7 +116,7 @@ async def do_chatting():
     try:
 
         # connect the service, get the posting & hosting endpoint
-        po, ho = await dial_socket(
+        po, ho = await dial_tcp(
             # the service address
             service_addr,
             # the consumer hosting env
