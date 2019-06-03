@@ -546,7 +546,7 @@ func (chatter *Chatter) keepChatting() {
 
 	for {
 		select {
-		case <-chatter.po.Done(): // disconnected from chat service
+		case <-chatter.po.Context().Done(): // disconnected from chat service
 			return
 		default: // still connected
 		}

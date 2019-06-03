@@ -53,8 +53,7 @@ func main() {
 	glog.V(1).Infof("Connected to chat service at: %s", po.RemoteAddr())
 
 	select {
-	case <-po.Done():
-	case <-ho.Done():
+	case <-ho.Context().Done():
 	}
 
 	glog.V(1).Infof("Disconnected from chat service at: %s", po.RemoteAddr())
