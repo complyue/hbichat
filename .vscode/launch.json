@@ -91,60 +91,6 @@
             ]
         },
         {
-            "name": "Hello Server - Python",
-            "type": "python",
-            "request": "launch",
-            "env": {
-                "HBI_LOG_LEVEL": "DEBUG",
-                "HBICHAT_LOG_LEVEL": "DEBUG"
-            },
-            "cwd": "${workspaceFolder}",
-            "module": "hbichat.cmd.hello-server",
-            "args": [],
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Hello Client - Python",
-            "type": "python",
-            "request": "launch",
-            "env": {
-                "HBI_LOG_LEVEL": "DEBUG",
-                "HBICHAT_LOG_LEVEL": "DEBUG"
-            },
-            "cwd": "${workspaceFolder}",
-            "module": "hbichat.cmd.hello-client",
-            "args": [],
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Hello Server - Go",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "env": {
-                "GOMAXPROCS": "2"
-            },
-            "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/cmd/hello-server",
-            "args": [
-                // "-v=3"
-            ]
-        },
-        {
-            "name": "Hello Client - Go",
-            "type": "go",
-            "request": "launch",
-            "mode": "debug",
-            "env": {
-                "GOMAXPROCS": "2"
-            },
-            "cwd": "${workspaceFolder}",
-            "program": "${workspaceFolder}/cmd/hello-client",
-            "args": [
-                // "-v=3"
-            ]
-        },
-        {
             "name": "Pretty Exports",
             "type": "python",
             "request": "launch",
