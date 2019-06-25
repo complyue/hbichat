@@ -423,7 +423,10 @@ func (chatter *Chatter) SendFile(roomID string, fn string) {
 
 	msg := ""
 	fpth := filepath.Join(roomDir, fn)
-	if fi, err := os.Stat(fpth); os.IsNotExist(err) || !fi.Mode().IsRegular() {
+	if fi, err := os.Stat(fpth); err != nil || !fi.Mode().IsRegular() {
+		if !os.IsNotExist(err) {
+			glog.Errorf("Error stating file [%s] - %+v - %+v", fpth, fi, err)
+		}
 		if err = co.SendObj(interop.JSONArray([]interface{}{
 			-1, "no such file",
 		})); err != nil {
