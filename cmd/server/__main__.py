@@ -74,12 +74,12 @@ def he_factory():  # Create a hosting env reacting to chat consumers
         # send welcome message to new comer
         await chatter.welcome_chatter()
 
-    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
+    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, disc_reason=None):
         nonlocal chatter
 
-        if err_reason is not None:
+        if disc_reason is not None:
             logger.error(
-                f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {err_reason!s}"
+                f"Connection to chatting consumer {chatter.po.remote_addr!s} lost: {disc_reason!s}"
             )
         else:
             logger.debug(f"Chatting consumer {chatter.po.remote_addr!s} disconnected.")

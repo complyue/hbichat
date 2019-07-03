@@ -85,10 +85,10 @@ def create_he():  # Create a hosting env reacting to chat service
 
         asyncio.create_task(chatter.keep_chatting())
 
-    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, err_reason=None):
+    async def __hbi_cleanup__(po: PostingEnd, ho: HostingEnd, disc_reason=None):
 
-        if err_reason is not None:
-            logger.error(f"Error with chatting service: {err_reason!s}")
+        if disc_reason is not None:
+            logger.error(f"Error with chatting service: {disc_reason!s}")
 
         if not tui_liner.is_set():
             # let main thread quit instead of wait for this forever
