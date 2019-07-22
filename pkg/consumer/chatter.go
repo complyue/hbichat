@@ -123,7 +123,7 @@ func (chatter *Chatter) setNick(nick string) {
 	// showcase the classic request/response pattern of service invocation over HBI wire.
 
 	// start a new posting conversation
-	co, err := chatter.po.NewCo()
+	co, err := chatter.po.NewCo(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -276,7 +276,7 @@ func (chatter *Chatter) uploadFile(roomID, fn string) {
 
 	if refused := func() bool {
 		// request the upload with a posting conversation
-		co, err := chatter.po.NewCo()
+		co, err := chatter.po.NewCo(nil)
 		if err != nil {
 			panic(err)
 		}
@@ -319,7 +319,7 @@ UploadReq(%#v, %#v, %d)
 	fmt.Printf(" Start uploading %d KB data ...\n", totalKB)
 
 	// start another posting conversation for file data upload
-	co, err := chatter.po.NewCo()
+	co, err := chatter.po.NewCo(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -400,7 +400,7 @@ RecvFile(%#v, %#v, %d)
 }
 
 func (chatter *Chatter) listServerFiles(roomID string) {
-	co, err := chatter.po.NewCo()
+	co, err := chatter.po.NewCo(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -441,7 +441,7 @@ func (chatter *Chatter) downloadFile(roomID, fn string) {
 	}
 
 	// start a new posting conversation
-	co, err := chatter.po.NewCo()
+	co, err := chatter.po.NewCo(nil)
 	if err != nil {
 		panic(err)
 	}
