@@ -75,7 +75,11 @@ func NewConsumerEnv() *hbi.HostingEnv {
 		}()
 	})
 
-	he.ExposeFunction("__hbi_cleanup__", func(discReason string) {
+	he.ExposeFunction("__hbi_cleanup__", func(
+		po *hbi.PostingEnd,
+		ho *hbi.HostingEnd,
+		discReason string,
+	) {
 
 		if glog.V(1) {
 			glog.Infof("Connection to chatting service %s lost: %s", serviceAddr, discReason)

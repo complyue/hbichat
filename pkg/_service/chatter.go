@@ -48,7 +48,11 @@ func NewServiceEnv() *hbi.HostingEnv {
 		chatter.welcomeChatter()
 	})
 
-	he.ExposeFunction("__hbi_cleanup__", func(discReason string) {
+	he.ExposeFunction("__hbi_cleanup__", func(
+		po *hbi.PostingEnd,
+		ho *hbi.HostingEnd,
+		discReason string,
+	) {
 		if len(discReason) > 0 {
 			glog.Infof("Connection to chatting consumer %s lost: %s", consumerAddr, discReason)
 		} else if glog.V(1) {
