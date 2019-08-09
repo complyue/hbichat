@@ -101,7 +101,7 @@ func (chatter *Chatter) welcomeChatter() {
 	nick := chatter.nick // snapshot the value to avoid dirty reads in following goroutines
 
 	func() { // send welcome notice to new comer
-		co, err := chatter.po.NewCo()
+		co, err := chatter.po.NewCo(nil)
 		if err != nil {
 			panic(err)
 		}
